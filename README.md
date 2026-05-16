@@ -19,7 +19,8 @@ An open-source, community-supported metronome.
 
 **Feel & Practice**
 - **Swing** — 0–60%, delays off-beat 8th/16th subdivisions toward a triplet feel
-- **Click sounds** — Sine, Wood, Beep, or Click (filtered noise)
+- **Per-role sounds** — independent timbre (Sine, Wood, Beep, Click) for the
+  accent, the normal beat, and each subdivision layer
 - **Quiet Count** — play N bars, then auto-mute M bars so you hold time yourself
 - **Tempo Trainer** — ramp BPM from a start to a target by +N every M measures
 - **Practice Timer** — run for a set duration with a live countdown, then auto-stop
@@ -117,8 +118,7 @@ Sources/Klck/
 
 ## Roadmap
 
-Planned: per-role distinct sounds (accent vs. subdivision), setlists / preset
-chaining, and an iOS companion app.
+Planned: setlists / preset chaining, and an iOS companion app.
 
 ## License
 

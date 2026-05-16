@@ -29,6 +29,15 @@ struct SubdivisionMixerView: View {
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                         .frame(width: 40, alignment: .trailing)
+
+                    Picker("Sound", selection: $layer.waveform) {
+                        ForEach(ClickWaveform.allCases) { wf in
+                            Text(wf.label).tag(wf)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 88)
+                    .disabled(!layer.enabled)
                 }
             }
         }

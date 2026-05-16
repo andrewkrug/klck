@@ -29,7 +29,8 @@ final class MetronomeModel: ObservableObject {
     // MARK: Practice / feel
 
     @Published var swing: Double = 0 { didSet { push() } }
-    @Published var clickSound: ClickWaveform = .sine { didSet { push() } }
+    @Published var accentSound: ClickWaveform = .sine { didSet { push() } }
+    @Published var beatSound: ClickWaveform = .sine { didSet { push() } }
 
     @Published var quietEnabled: Bool = false { didSet { push() } }
     @Published var quietPlayBars: Int = 4 { didSet { push() } }
@@ -240,7 +241,8 @@ final class MetronomeModel: ObservableObject {
             layers: layers,
             masterVolume: masterVolume,
             swing: swing,
-            waveform: clickSound
+            accentWaveform: accentSound,
+            beatWaveform: beatSound
         )
         if let idx = presets.firstIndex(where: { $0.name == trimmed }) {
             presets[idx] = preset
@@ -257,7 +259,8 @@ final class MetronomeModel: ObservableObject {
         layers = preset.layers
         masterVolume = preset.masterVolume
         swing = preset.swing
-        clickSound = preset.waveform
+        accentSound = preset.accentWaveform
+        beatSound = preset.beatWaveform
         push()
     }
 
@@ -300,12 +303,14 @@ final class MetronomeModel: ObservableObject {
                     enabled: $0.enabled,
                     pulsesPerBeat: $0.pulsesPerBeat,
                     volume: Float($0.volume),
-                    frequency: Float($0.frequency)
+                    frequency: Float($0.frequency),
+                    waveform: $0.waveform
                 )
             },
             masterVolume: Float(masterVolume),
             swing: Float(swing),
-            waveform: clickSound,
+            accentWaveform: accentSound,
+            beatWaveform: beatSound,
             quietEnabled: quietEnabled,
             quietPlayBars: quietPlayBars,
             quietMuteBars: quietMuteBars,

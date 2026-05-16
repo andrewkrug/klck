@@ -25,6 +25,7 @@ struct LayerSnapshot {
     var pulsesPerBeat: Int   // 1 = quarter, 2 = eighth, 3 = triplet, 4 = sixteenth
     var volume: Float        // 0...1
     var frequency: Float     // click pitch in Hz
+    var waveform: ClickWaveform = .sine
 }
 
 /// Immutable parameter snapshot consumed by the render callback.
@@ -37,7 +38,8 @@ struct EngineParams {
     var masterVolume: Float = 0.9
     /// 0 = straight, up to ~0.6 = hard triplet swing (delays off-beat subdivisions).
     var swing: Float = 0
-    var waveform: ClickWaveform = .sine
+    var accentWaveform: ClickWaveform = .sine
+    var beatWaveform: ClickWaveform = .sine
     /// Quiet Count: play `quietPlayBars`, then silence `quietMuteBars`, repeat.
     var quietEnabled: Bool = false
     var quietPlayBars: Int = 4
@@ -213,7 +215,8 @@ final class AudioEngine {
         let framesPerBeat = sampleRate * 60.0 / max(p.bpm, 1)
         let beatsPerCycle = max(p.beatsPerCycle, 1)
         let quietCycle = max(p.quietPlayBars + p.quietMuteBars, 1)
-        let wf = p.waveform.rawValue
+        let accentWF = p.accentWaveform.rawValue
+        let beatWF = p.beatWaveform.rawValue
 
         // Lock-free transport (re)start: model bumps the epoch, we reset here.
         if p.transportEpoch != lastEpoch {
@@ -241,9 +244,9 @@ final class AudioEngine {
                 let state = idx < p.accents.count ? p.accents[idx] : 1
                 if !muted {
                     if state == 2 {
-                        trigger(frequency: 2_000, amplitude: 1.0, lengthSec: 0.055, waveform: wf)
+                        trigger(frequency: 2_000, amplitude: 1.0, lengthSec: 0.055, waveform: accentWF)
                     } else if state == 1 {
-                        trigger(frequency: 1_000, amplitude: 0.6, lengthSec: 0.045, waveform: wf)
+                        trigger(frequency: 1_000, amplitude: 0.6, lengthSec: 0.045, waveform: beatWF)
                     }
                 }
                 publishBeat(measure: measure, beatIndex: idx)
@@ -262,7 +265,7 @@ final class AudioEngine {
                             frequency: layer.frequency,
                             amplitude: layer.volume * 0.5,
                             lengthSec: 0.030,
-                            waveform: wf
+                            waveform: layer.waveform.rawValue
                         )
                     }
                     // Swing: lengthen the on-pulse, shorten the off-pulse.

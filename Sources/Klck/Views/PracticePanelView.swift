@@ -10,25 +10,16 @@ struct PracticePanelView: View {
                 .foregroundStyle(DB66.engrave)
                 .tracking(1.5)
 
-            // Swing + click sound
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Swing \(Int(model.swing * 100))%")
+                    .font(.subheadline)
+                Slider(value: $model.swing, in: 0...0.6)
+                    .frame(maxWidth: 320)
+            }
+
             HStack(spacing: 24) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Swing \(Int(model.swing * 100))%")
-                        .font(.subheadline)
-                    Slider(value: $model.swing, in: 0...0.6)
-                        .frame(width: 220)
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Click sound").font(.subheadline)
-                    Picker("Click sound", selection: $model.clickSound) {
-                        ForEach(ClickWaveform.allCases) { wf in
-                            Text(wf.label).tag(wf)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(width: 260)
-                }
+                soundPicker("Accent sound", selection: $model.accentSound)
+                soundPicker("Beat sound", selection: $model.beatSound)
             }
 
             Toggle("Flash screen on the beat (brighter on the downbeat)",
@@ -110,5 +101,20 @@ struct PracticePanelView: View {
     private func timeString(_ t: TimeInterval) -> String {
         let s = Int(t.rounded())
         return String(format: "%d:%02d", s / 60, s % 60)
+    }
+
+    private func soundPicker(_ title: String,
+                             selection: Binding<ClickWaveform>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.subheadline)
+            Picker(title, selection: selection) {
+                ForEach(ClickWaveform.allCases) { wf in
+                    Text(wf.label).tag(wf)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 240)
+        }
     }
 }
