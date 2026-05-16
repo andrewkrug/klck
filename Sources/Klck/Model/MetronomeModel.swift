@@ -18,13 +18,33 @@ enum BeatAccent: Int {
 
 @MainActor
 final class MetronomeModel: ObservableObject {
-    // MARK: Published state
+    // MARK: Core state
 
     @Published var bpm: Double = 120 { didSet { push() } }
     @Published var beatsPerCycle: Int = 4 { didSet { syncAccents(); push() } }
     @Published var accents: [Int] = [2, 1, 1, 1] { didSet { push() } }
     @Published var layers: [SubLayer] = SubLayer.defaults { didSet { push() } }
     @Published var masterVolume: Double = 0.9 { didSet { push() } }
+
+    // MARK: Practice / feel
+
+    @Published var swing: Double = 0 { didSet { push() } }
+    @Published var clickSound: ClickWaveform = .sine { didSet { push() } }
+
+    @Published var quietEnabled: Bool = false { didSet { push() } }
+    @Published var quietPlayBars: Int = 4 { didSet { push() } }
+    @Published var quietMuteBars: Int = 2 { didSet { push() } }
+
+    @Published var rampEnabled: Bool = false
+    @Published var rampStartBPM: Double = 80
+    @Published var rampTargetBPM: Double = 160
+    @Published var rampStepBPM: Double = 4
+    @Published var rampEveryBars: Int = 4
+
+    @Published var timerEnabled: Bool = false
+    @Published var timerMinutes: Int = 10
+    @Published private(set) var timerRemaining: TimeInterval = 0
+
     @Published private(set) var isRunning = false
     @Published private(set) var presets: [Preset] = []
 
@@ -35,6 +55,9 @@ final class MetronomeModel: ObservableObject {
 
     private let engine = AudioEngine()
     private var tapTimes: [Date] = []
+    private var driver: Timer?
+    private var lastRampMeasure = 0
+    private var timerEndDate: Date?
 
     init() {
         loadPresets()
@@ -45,16 +68,82 @@ final class MetronomeModel: ObservableObject {
 
     func toggle() {
         if isRunning {
-            engine.stop()
+            stopRunning()
         } else {
-            push()
-            engine.start()
+            startRunning()
         }
+    }
+
+    private func startRunning() {
+        if rampEnabled {
+            bpm = clampedBPM(rampStartBPM)
+        }
+        lastRampMeasure = 0
+        if timerEnabled {
+            timerEndDate = Date().addingTimeInterval(Double(timerMinutes) * 60)
+            timerRemaining = Double(timerMinutes) * 60
+        }
+        push()
+        engine.start()
         isRunning = engine.isRunning
+        if isRunning { startDriver() }
+    }
+
+    private func stopRunning() {
+        engine.stop()
+        isRunning = engine.isRunning
+        stopDriver()
+        timerEndDate = nil
     }
 
     func setBPM(_ value: Double) {
-        bpm = min(max(value.rounded(), minBPM), maxBPM)
+        bpm = clampedBPM(value.rounded())
+    }
+
+    private func clampedBPM(_ v: Double) -> Double {
+        min(max(v, minBPM), maxBPM)
+    }
+
+    // MARK: Practice driver (tempo ramp + practice timer)
+
+    private func startDriver() {
+        stopDriver()
+        let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.driverTick()
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        driver = t
+    }
+
+    private func stopDriver() {
+        driver?.invalidate()
+        driver = nil
+    }
+
+    private func driverTick() {
+        guard isRunning else { return }
+
+        // Tempo ramp / stepping, advanced by elapsed measures.
+        if rampEnabled, rampEveryBars > 0 {
+            let measure = engine.currentMeasure
+            if measure - lastRampMeasure >= rampEveryBars {
+                lastRampMeasure = measure
+                let goingUp = rampTargetBPM >= rampStartBPM
+                let next = goingUp ? bpm + rampStepBPM : bpm - rampStepBPM
+                let reached = goingUp ? next >= rampTargetBPM : next <= rampTargetBPM
+                bpm = clampedBPM(reached ? rampTargetBPM : next)
+            }
+        }
+
+        // Practice timer countdown.
+        if timerEnabled, let end = timerEndDate {
+            timerRemaining = max(0, end.timeIntervalSinceNow)
+            if timerRemaining <= 0 {
+                stopRunning()
+            }
+        }
     }
 
     // MARK: Tap tempo
@@ -62,7 +151,6 @@ final class MetronomeModel: ObservableObject {
     func tap() {
         let now = Date()
         tapTimes.append(now)
-        // Drop taps older than 2s — a new tempo intention.
         tapTimes = tapTimes.filter { now.timeIntervalSince($0) < 2.0 }
         guard tapTimes.count >= 2 else { return }
         var intervals: [Double] = []
@@ -102,7 +190,9 @@ final class MetronomeModel: ObservableObject {
             beatsPerCycle: beatsPerCycle,
             accents: accents,
             layers: layers,
-            masterVolume: masterVolume
+            masterVolume: masterVolume,
+            swing: swing,
+            waveform: clickSound
         )
         if let idx = presets.firstIndex(where: { $0.name == trimmed }) {
             presets[idx] = preset
@@ -118,6 +208,8 @@ final class MetronomeModel: ObservableObject {
         accents = preset.accents
         layers = preset.layers
         masterVolume = preset.masterVolume
+        swing = preset.swing
+        clickSound = preset.waveform
         push()
     }
 
@@ -163,7 +255,12 @@ final class MetronomeModel: ObservableObject {
                     frequency: Float($0.frequency)
                 )
             },
-            masterVolume: Float(masterVolume)
+            masterVolume: Float(masterVolume),
+            swing: Float(swing),
+            waveform: clickSound,
+            quietEnabled: quietEnabled,
+            quietPlayBars: quietPlayBars,
+            quietMuteBars: quietMuteBars
         )
         engine.update(snapshot)
     }

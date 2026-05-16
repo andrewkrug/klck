@@ -1,6 +1,24 @@
 import AVFoundation
 import os.lock
 
+/// Click timbre.
+enum ClickWaveform: Int, Codable, CaseIterable, Identifiable {
+    case sine = 0
+    case triangle = 1
+    case square = 2
+    case noise = 3
+
+    var id: Int { rawValue }
+    var label: String {
+        switch self {
+        case .sine:     return "Sine"
+        case .triangle: return "Wood"
+        case .square:   return "Beep"
+        case .noise:    return "Click"
+        }
+    }
+}
+
 /// One subdivision layer as the audio thread sees it.
 struct LayerSnapshot {
     var enabled: Bool
@@ -17,15 +35,23 @@ struct EngineParams {
     var accents: [Int] = [2, 1, 1, 1]
     var layers: [LayerSnapshot] = []
     var masterVolume: Float = 0.9
+    /// 0 = straight, up to ~0.6 = hard triplet swing (delays off-beat subdivisions).
+    var swing: Float = 0
+    var waveform: ClickWaveform = .sine
+    /// Quiet Count: play `quietPlayBars`, then silence `quietMuteBars`, repeat.
+    var quietEnabled: Bool = false
+    var quietPlayBars: Int = 4
+    var quietMuteBars: Int = 4
 }
 
-/// A single damped-sinusoid click voice.
+/// A single enveloped click voice.
 private struct Voice {
     var active = false
-    var phase: Float = 0
+    var phase: Float = 0          // 0...2π
     var phaseInc: Float = 0
     var env: Float = 0
     var decay: Float = 0
+    var waveform: Int32 = 0
 }
 
 /// Sample-accurate metronome audio engine.
@@ -43,14 +69,28 @@ final class AudioEngine {
     private var paramsLock = os_unfair_lock_s()
     private var params = EngineParams()
 
+    // Metrics handoff (audio thread writes, main thread reads).
+    private var metricsLock = os_unfair_lock_s()
+    private var _measureIndex: Int = 0
+
     // Audio-thread-only scheduler state.
     private var sampleClock: Int64 = 0
     private var mainBeatCounter: Int = 0
     private var nextMainFrame: Double = 0
     private var nextLayerFrame: [Double] = []
+    private var layerPulseCounter: [Int] = []
     private var voices = [Voice](repeating: Voice(), count: 24)
+    private var rng: UInt32 = 0x9E3779B9
 
     private(set) var isRunning = false
+
+    /// Measures elapsed since the last `start()` — read by the practice driver.
+    var currentMeasure: Int {
+        os_unfair_lock_lock(&metricsLock)
+        let m = _measureIndex
+        os_unfair_lock_unlock(&metricsLock)
+        return m
+    }
 
     // MARK: Parameter updates
 
@@ -65,6 +105,12 @@ final class AudioEngine {
         let p = params
         os_unfair_lock_unlock(&paramsLock)
         return p
+    }
+
+    private func publishMeasure(_ m: Int) {
+        os_unfair_lock_lock(&metricsLock)
+        _measureIndex = m
+        os_unfair_lock_unlock(&metricsLock)
     }
 
     // MARK: Transport
@@ -93,7 +139,9 @@ final class AudioEngine {
         nextMainFrame = 0
         let layerCount = snapshot().layers.count
         nextLayerFrame = [Double](repeating: 0, count: layerCount)
+        layerPulseCounter = [Int](repeating: 0, count: layerCount)
         for i in voices.indices { voices[i].active = false }
+        publishMeasure(0)
     }
 
     // MARK: Engine graph
@@ -129,53 +177,69 @@ final class AudioEngine {
         let buffers = UnsafeMutableAudioBufferListPointer(abl)
 
         let twoPi = Float.pi * 2
-        let sr = Float(sampleRate)
         let framesPerBeat = sampleRate * 60.0 / max(p.bpm, 1)
+        let beatsPerCycle = max(p.beatsPerCycle, 1)
+        let quietCycle = max(p.quietPlayBars + p.quietMuteBars, 1)
+        let wf = p.waveform.rawValue
 
         // Keep scheduler arrays consistent with the current layer count.
         if nextLayerFrame.count != p.layers.count {
             nextLayerFrame = [Double](repeating: Double(sampleClock), count: p.layers.count)
+            layerPulseCounter = [Int](repeating: 0, count: p.layers.count)
         }
 
         for frame in 0..<frameCount {
             let now = Double(sampleClock) + Double(frame)
 
+            let measure = mainBeatCounter / beatsPerCycle
+            let muted = p.quietEnabled && (measure % quietCycle) >= p.quietPlayBars
+
             // --- Main beat scheduler ---
             if now >= nextMainFrame {
-                let beatsPerCycle = max(p.beatsPerCycle, 1)
                 let idx = mainBeatCounter % beatsPerCycle
                 let state = idx < p.accents.count ? p.accents[idx] : 1
-                if state == 2 {
-                    trigger(frequency: 2_000, amplitude: 1.0, lengthSec: 0.055)
-                } else if state == 1 {
-                    trigger(frequency: 1_000, amplitude: 0.6, lengthSec: 0.045)
+                if !muted {
+                    if state == 2 {
+                        trigger(frequency: 2_000, amplitude: 1.0, lengthSec: 0.055, waveform: wf)
+                    } else if state == 1 {
+                        trigger(frequency: 1_000, amplitude: 0.6, lengthSec: 0.045, waveform: wf)
+                    }
                 }
                 mainBeatCounter += 1
+                publishMeasure(mainBeatCounter / beatsPerCycle)
                 nextMainFrame += framesPerBeat
             }
 
-            // --- Subdivision layers ---
+            // --- Subdivision layers (with swing on even subdivisions) ---
             for li in p.layers.indices {
                 let layer = p.layers[li]
                 let pulses = max(layer.pulsesPerBeat, 1)
-                let framesPerPulse = framesPerBeat / Double(pulses)
+                let basePulse = framesPerBeat / Double(pulses)
                 if now >= nextLayerFrame[li] {
-                    if layer.enabled && layer.volume > 0.0001 {
+                    if !muted && layer.enabled && layer.volume > 0.0001 {
                         trigger(
                             frequency: layer.frequency,
                             amplitude: layer.volume * 0.5,
-                            lengthSec: 0.030
+                            lengthSec: 0.030,
+                            waveform: wf
                         )
                     }
-                    nextLayerFrame[li] += framesPerPulse
+                    // Swing: lengthen the on-pulse, shorten the off-pulse.
+                    // Only meaningful for even subdivisions (8th/16th).
+                    let parity = layerPulseCounter[li] % 2
+                    let swingAmt = (pulses % 2 == 0) ? Double(p.swing) : 0
+                    let interval = parity == 0
+                        ? basePulse * (1.0 + swingAmt)
+                        : basePulse * (1.0 - swingAmt)
+                    layerPulseCounter[li] += 1
+                    nextLayerFrame[li] += interval
                 }
             }
 
             // --- Mix active voices ---
             var sample: Float = 0
             for vi in voices.indices where voices[vi].active {
-                let s = sinf(voices[vi].phase) * voices[vi].env
-                sample += s
+                sample += oscillator(voices[vi]) * voices[vi].env
                 voices[vi].phase += voices[vi].phaseInc
                 if voices[vi].phase > twoPi { voices[vi].phase -= twoPi }
                 voices[vi].env *= voices[vi].decay
@@ -190,11 +254,25 @@ final class AudioEngine {
             }
         }
 
-        _ = sr
         sampleClock += Int64(frameCount)
     }
 
-    private func trigger(frequency: Float, amplitude: Float, lengthSec: Float) {
+    private func oscillator(_ v: Voice) -> Float {
+        switch v.waveform {
+        case 1: // triangle ("wood")
+            let t = v.phase / (Float.pi * 2)
+            return (4 * abs(t - 0.5) - 1)
+        case 2: // square ("beep")
+            return v.phase < Float.pi ? 0.7 : -0.7
+        case 3: // filtered noise ("click")
+            rng = rng &* 1_664_525 &+ 1_013_904_223
+            return (Float(rng >> 8) / Float(1 << 24)) * 2 - 1
+        default: // sine
+            return sinf(v.phase)
+        }
+    }
+
+    private func trigger(frequency: Float, amplitude: Float, lengthSec: Float, waveform: Int) {
         // Find a free voice; if none, steal the quietest.
         var slot = -1
         for i in voices.indices where !voices[i].active { slot = i; break }
@@ -212,6 +290,7 @@ final class AudioEngine {
         voices[slot].phase = 0
         voices[slot].phaseInc = (Float.pi * 2 * frequency) / sr
         voices[slot].env = amplitude
+        voices[slot].waveform = Int32(waveform)
         // Exponential decay reaching ~0.0005 at the end of lengthSec.
         voices[slot].decay = powf(0.0005 / max(amplitude, 0.0005), 1.0 / totalSamples)
     }
