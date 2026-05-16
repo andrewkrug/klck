@@ -3,6 +3,9 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var model: MetronomeModel
     @State private var showMemory = false
+    @State private var showSave = false
+    @State private var saveName = ""
+    @State private var flash = 0.0
 
     var body: some View {
         ZStack {
@@ -15,7 +18,7 @@ struct ContentView: View {
                     VStack(spacing: 14) {
                         BeatLightsView()
                         LCDView()
-                        TransportDeckView(showMemory: $showMemory)
+                        TransportDeckView(showMemory: $showMemory, showSave: $showSave)
                     }
                     .devicePanel()
 
@@ -27,11 +30,35 @@ struct ContentView: View {
                 .frame(maxWidth: 620)
                 .frame(maxWidth: .infinity)
             }
+
+            // Beat flash: bright accent on the downbeat, soft amber otherwise.
+            if model.flashEnabled {
+                (model.activeBeat == 0 ? DB66.ledAccent : DB66.ledBeat)
+                    .opacity(flash)
+                    .blendMode(.screen)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+            }
         }
         .preferredColorScheme(.dark)
         .tint(DB66.ledBeat)
+        .onChange(of: model.beatPulse) { _ in
+            guard model.flashEnabled, model.isRunning else { return }
+            flash = model.activeBeat == 0 ? 0.32 : 0.14
+            withAnimation(.easeOut(duration: 0.16)) { flash = 0.0 }
+        }
         .sheet(isPresented: $showMemory) {
             MemorySheet().environmentObject(model)
+        }
+        .alert("Save Preset", isPresented: $showSave) {
+            TextField("Preset name", text: $saveName)
+            Button("Save") {
+                model.savePreset(named: saveName)
+                saveName = ""
+            }
+            Button("Cancel", role: .cancel) { saveName = "" }
+        } message: {
+            Text("Stores tempo, meter, accents, subdivisions, swing, and sound.")
         }
     }
 

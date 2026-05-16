@@ -4,6 +4,7 @@ import SwiftUI
 struct TransportDeckView: View {
     @EnvironmentObject private var model: MetronomeModel
     @Binding var showMemory: Bool
+    @Binding var showSave: Bool
 
     var body: some View {
         VStack(spacing: 14) {
@@ -35,6 +36,9 @@ struct TransportDeckView: View {
                     .keyboardShortcut("t", modifiers: [])
 
                 Spacer()
+
+                Button("SAVE") { showSave = true }
+                    .buttonStyle(DeviceButtonStyle())
 
                 Button("MEMORY") { showMemory = true }
                     .buttonStyle(DeviceButtonStyle())

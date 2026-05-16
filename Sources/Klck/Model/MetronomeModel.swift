@@ -45,6 +45,9 @@ final class MetronomeModel: ObservableObject {
     @Published var timerMinutes: Int = 10
     @Published private(set) var timerRemaining: TimeInterval = 0
 
+    /// Flash the screen in time with the beat (brighter on the downbeat).
+    @Published var flashEnabled: Bool = true
+
     @Published private(set) var isRunning = false
     @Published private(set) var presets: [Preset] = []
 

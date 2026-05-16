@@ -31,6 +31,11 @@ struct PracticePanelView: View {
                 }
             }
 
+            Toggle("Flash screen on the beat (brighter on the downbeat)",
+                   isOn: $model.flashEnabled)
+                .toggleStyle(.switch)
+                .font(.subheadline)
+
             DisclosureGroup {
                 HStack(spacing: 16) {
                     Toggle("Enable", isOn: $model.quietEnabled)
