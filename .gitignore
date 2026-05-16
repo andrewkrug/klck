@@ -3,6 +3,7 @@
 *.app/
 DerivedData/
 .DS_Store
+.vscode/
 xcuserdata/
 *.xcodeproj/*
 !*.xcodeproj/project.pbxproj
