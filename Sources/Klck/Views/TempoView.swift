@@ -19,15 +19,11 @@ struct LCDView: View {
             .font(DB66.lcdFont(13))
             .foregroundStyle(DB66.lcdInk)
 
-            // Big tempo readout with ghosted "off" segments behind.
+            // Big tempo readout.
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                ZStack(alignment: .trailing) {
-                    Text("888")
-                        .foregroundStyle(DB66.lcdInkDim)
-                    Text(bpmDigits)
-                        .foregroundStyle(DB66.lcdInk)
-                }
-                .font(DB66.lcdFont(76))
+                Text(bpmDigits)
+                    .foregroundStyle(DB66.lcdInk)
+                    .font(DB66.lcdFont(76))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("BPM")
