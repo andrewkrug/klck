@@ -122,4 +122,4 @@ chaining, and an iOS companion app.
 
 ## License
 
-Personal project — no license specified.
+Released under the [MIT License](LICENSE). Contributions welcome.
