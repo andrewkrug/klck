@@ -48,6 +48,12 @@ final class MetronomeModel: ObservableObject {
     /// Flash the screen in time with the beat (brighter on the downbeat).
     @Published var flashEnabled: Bool = true
 
+    // MARK: Reference tone generator
+
+    @Published var toneEnabled: Bool = false { didSet { syncAudio() } }
+    @Published var toneFrequency: Double = 440 { didSet { push() } }
+    @Published var toneVolume: Double = 0.3 { didSet { push() } }
+
     @Published private(set) var isRunning = false
     @Published private(set) var presets: [Preset] = []
 
@@ -67,6 +73,16 @@ final class MetronomeModel: ObservableObject {
     private var lastRampMeasure = 0
     private var lastBeatTick = -1
     private var timerEndDate: Date?
+    private var transportEpoch = 0
+
+    /// MIDI note name for a frequency, e.g. 440 → "A4".
+    static func noteName(for frequency: Double) -> String {
+        guard frequency > 0 else { return "—" }
+        let names = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"]
+        let midi = Int((69 + 12 * log2(frequency / 440)).rounded())
+        let n = ((midi % 12) + 12) % 12
+        return "\(names[n])\(midi / 12 - 1)"
+    }
 
     init() {
         loadPresets()
@@ -94,18 +110,28 @@ final class MetronomeModel: ObservableObject {
         }
         lastBeatTick = -1
         activeBeat = -1
-        push()
-        engine.start()
-        isRunning = engine.isRunning
-        if isRunning { startDriver() }
+        transportEpoch += 1   // tells the engine to restart from bar 1
+        isRunning = true
+        syncAudio()
+        startDriver()
     }
 
     private func stopRunning() {
-        engine.stop()
-        isRunning = engine.isRunning
+        isRunning = false
         stopDriver()
         timerEndDate = nil
         activeBeat = -1
+        syncAudio()
+    }
+
+    /// Runs the audio hardware whenever the metronome *or* the tone needs it.
+    private func syncAudio() {
+        if isRunning || toneEnabled {
+            engine.start()
+        } else {
+            engine.stop()
+        }
+        push()
     }
 
     func setBPM(_ value: Double) {
@@ -281,7 +307,12 @@ final class MetronomeModel: ObservableObject {
             waveform: clickSound,
             quietEnabled: quietEnabled,
             quietPlayBars: quietPlayBars,
-            quietMuteBars: quietMuteBars
+            quietMuteBars: quietMuteBars,
+            metronomeOn: isRunning,
+            transportEpoch: transportEpoch,
+            toneEnabled: toneEnabled,
+            toneFrequency: Float(toneFrequency),
+            toneVolume: Float(toneVolume)
         )
         engine.update(snapshot)
     }

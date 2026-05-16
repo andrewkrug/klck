@@ -23,9 +23,18 @@ Inspired by the feature set of the Dr. Betotte / Beat Box iOS metronome.
 - **Quiet Count** — play N bars, then auto-mute M bars so you hold time yourself
 - **Tempo Trainer** — ramp BPM from a start to a target by +N every M measures
 - **Practice Timer** — run for a set duration with a live countdown, then auto-stop
+- **Beat flash** — the screen pulses in time, brighter on the downbeat (toggle)
+
+**Tuner & Tone**
+- **Chromatic tuner** — microphone pitch detection with note name, frequency,
+  and a ±50-cent meter (autocorrelation + parabolic interpolation)
+- **Tone generator** — sustained reference pitch, semitone stepping, A=440
+  preset, and volume; runs with or without the metronome
 
 The audio engine computes all click timing in absolute sample frames inside the
 `AVAudioSourceNode` render callback, so timing is immune to UI/timer jitter.
+
+The tuner needs microphone access; macOS will prompt on first use.
 
 ## Requirements
 
@@ -74,8 +83,10 @@ Under the hood, `make app` runs `./build_app.sh`, which does
 5. Toggle subdivision layers and set their volumes in **Subdivision layers**.
 6. Open **Feel & Practice** for swing, click sound, Quiet Count, the Tempo
    Trainer, and the Practice Timer.
-7. Use **Save Preset** (toolbar) to store the full configuration; recall or
-   delete presets from the sidebar.
+7. Press **SAVE** to store the full configuration; **MEMORY** recalls or
+   deletes presets.
+8. In **Tuner & Tone**, press **LISTEN** to tune by mic, or enable **Tone**
+   for a reference pitch.
 
 ### Keyboard shortcuts
 

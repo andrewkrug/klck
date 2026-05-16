@@ -25,6 +25,7 @@ struct ContentView: View {
                     BeatGridView().devicePanel()
                     SubdivisionMixerView().devicePanel()
                     PracticePanelView().devicePanel()
+                    TunerToneView().devicePanel()
                 }
                 .padding(20)
                 .frame(maxWidth: 620)

@@ -42,6 +42,17 @@ struct EngineParams {
     var quietEnabled: Bool = false
     var quietPlayBars: Int = 4
     var quietMuteBars: Int = 4
+
+    /// Whether the metronome click is scheduled (engine may run for the tone
+    /// generator while this is false).
+    var metronomeOn: Bool = false
+    /// Bump to restart the beat scheduler from bar 1 on the next render block.
+    var transportEpoch: Int = 0
+
+    // Reference tone generator.
+    var toneEnabled: Bool = false
+    var toneFrequency: Float = 440
+    var toneVolume: Float = 0.3
 }
 
 /// A single enveloped click voice.
@@ -83,6 +94,8 @@ final class AudioEngine {
     private var layerPulseCounter: [Int] = []
     private var voices = [Voice](repeating: Voice(), count: 24)
     private var rng: UInt32 = 0x9E3779B9
+    private var lastEpoch: Int = -1
+    private var tonePhase: Float = 0
 
     private(set) var isRunning = false
 
@@ -134,10 +147,12 @@ final class AudioEngine {
 
     // MARK: Transport
 
+    /// Ensures the audio hardware is running. The metronome click and the
+    /// reference tone are gated by params, so the model calls this whenever
+    /// *either* needs output, and `stop()` when neither does.
     func start() {
         guard !isRunning else { return }
         configureIfNeeded()
-        resetSchedulerState()
         do {
             try engine.start()
             isRunning = true
@@ -152,12 +167,11 @@ final class AudioEngine {
         isRunning = false
     }
 
-    private func resetSchedulerState() {
-        sampleClock = 0
+    /// Restarts the beat scheduler from bar 1 on the next render block.
+    private func resetScheduler(at clock: Double, layerCount: Int) {
         mainBeatCounter = 0
-        nextMainFrame = 0
-        let layerCount = snapshot().layers.count
-        nextLayerFrame = [Double](repeating: 0, count: layerCount)
+        nextMainFrame = clock
+        nextLayerFrame = [Double](repeating: clock, count: layerCount)
         layerPulseCounter = [Int](repeating: 0, count: layerCount)
         for i in voices.indices { voices[i].active = false }
         publishMeasure(0)
@@ -201,11 +215,19 @@ final class AudioEngine {
         let quietCycle = max(p.quietPlayBars + p.quietMuteBars, 1)
         let wf = p.waveform.rawValue
 
+        // Lock-free transport (re)start: model bumps the epoch, we reset here.
+        if p.transportEpoch != lastEpoch {
+            lastEpoch = p.transportEpoch
+            resetScheduler(at: Double(sampleClock), layerCount: p.layers.count)
+        }
+
         // Keep scheduler arrays consistent with the current layer count.
         if nextLayerFrame.count != p.layers.count {
             nextLayerFrame = [Double](repeating: Double(sampleClock), count: p.layers.count)
             layerPulseCounter = [Int](repeating: 0, count: p.layers.count)
         }
+
+        let toneInc = (Float.pi * 2 * max(p.toneFrequency, 1)) / Float(sampleRate)
 
         for frame in 0..<frameCount {
             let now = Double(sampleClock) + Double(frame)
@@ -214,7 +236,7 @@ final class AudioEngine {
             let muted = p.quietEnabled && (measure % quietCycle) >= p.quietPlayBars
 
             // --- Main beat scheduler ---
-            if now >= nextMainFrame {
+            if p.metronomeOn && now >= nextMainFrame {
                 let idx = mainBeatCounter % beatsPerCycle
                 let state = idx < p.accents.count ? p.accents[idx] : 1
                 if !muted {
@@ -234,7 +256,7 @@ final class AudioEngine {
                 let layer = p.layers[li]
                 let pulses = max(layer.pulsesPerBeat, 1)
                 let basePulse = framesPerBeat / Double(pulses)
-                if now >= nextLayerFrame[li] {
+                if p.metronomeOn && now >= nextLayerFrame[li] {
                     if !muted && layer.enabled && layer.volume > 0.0001 {
                         trigger(
                             frequency: layer.frequency,
@@ -265,6 +287,14 @@ final class AudioEngine {
                 if voices[vi].env < 0.0005 { voices[vi].active = false }
             }
             sample *= p.masterVolume
+
+            // --- Reference tone (independent of the metronome) ---
+            if p.toneEnabled {
+                sample += sinf(tonePhase) * p.toneVolume
+                tonePhase += toneInc
+                if tonePhase > twoPi { tonePhase -= twoPi }
+            }
+
             if sample > 1 { sample = 1 } else if sample < -1 { sample = -1 }
 
             for buffer in buffers {
