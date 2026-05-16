@@ -72,6 +72,8 @@ final class AudioEngine {
     // Metrics handoff (audio thread writes, main thread reads).
     private var metricsLock = os_unfair_lock_s()
     private var _measureIndex: Int = 0
+    private var _beatIndex: Int = 0       // 0-based beat within the current measure
+    private var _beatTick: Int = 0        // monotonic; bumps on every beat boundary
 
     // Audio-thread-only scheduler state.
     private var sampleClock: Int64 = 0
@@ -84,13 +86,22 @@ final class AudioEngine {
 
     private(set) var isRunning = false
 
-    /// Measures elapsed since the last `start()` — read by the practice driver.
-    var currentMeasure: Int {
+    /// Live transport position, read by the practice driver and the beat lights.
+    struct Metrics {
+        var measure = 0
+        var beatIndex = 0
+        var beatTick = 0
+    }
+
+    var metrics: Metrics {
         os_unfair_lock_lock(&metricsLock)
-        let m = _measureIndex
+        let m = Metrics(measure: _measureIndex, beatIndex: _beatIndex, beatTick: _beatTick)
         os_unfair_lock_unlock(&metricsLock)
         return m
     }
+
+    /// Measures elapsed since the last `start()` — read by the practice driver.
+    var currentMeasure: Int { metrics.measure }
 
     // MARK: Parameter updates
 
@@ -110,6 +121,14 @@ final class AudioEngine {
     private func publishMeasure(_ m: Int) {
         os_unfair_lock_lock(&metricsLock)
         _measureIndex = m
+        os_unfair_lock_unlock(&metricsLock)
+    }
+
+    private func publishBeat(measure: Int, beatIndex: Int) {
+        os_unfair_lock_lock(&metricsLock)
+        _measureIndex = measure
+        _beatIndex = beatIndex
+        _beatTick &+= 1
         os_unfair_lock_unlock(&metricsLock)
     }
 
@@ -205,8 +224,8 @@ final class AudioEngine {
                         trigger(frequency: 1_000, amplitude: 0.6, lengthSec: 0.045, waveform: wf)
                     }
                 }
+                publishBeat(measure: measure, beatIndex: idx)
                 mainBeatCounter += 1
-                publishMeasure(mainBeatCounter / beatsPerCycle)
                 nextMainFrame += framesPerBeat
             }
 

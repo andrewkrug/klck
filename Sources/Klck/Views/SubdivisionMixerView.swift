@@ -5,8 +5,10 @@ struct SubdivisionMixerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Subdivision layers")
-                .font(.headline)
+            Text("SUBDIVISION LAYERS")
+                .font(.system(size: 13, weight: .heavy, design: .rounded))
+                .foregroundStyle(DB66.engrave)
+                .tracking(1.5)
 
             ForEach($model.layers) { $layer in
                 HStack(spacing: 14) {

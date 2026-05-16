@@ -48,6 +48,11 @@ final class MetronomeModel: ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var presets: [Preset] = []
 
+    /// Live transport position for the beat lights (-1 = stopped).
+    @Published private(set) var activeBeat: Int = -1
+    /// Bumps on every beat — views observe this to flash in time.
+    @Published private(set) var beatPulse: Int = 0
+
     let minBPM: Double = 30
     let maxBPM: Double = 300
 
@@ -57,6 +62,7 @@ final class MetronomeModel: ObservableObject {
     private var tapTimes: [Date] = []
     private var driver: Timer?
     private var lastRampMeasure = 0
+    private var lastBeatTick = -1
     private var timerEndDate: Date?
 
     init() {
@@ -83,6 +89,8 @@ final class MetronomeModel: ObservableObject {
             timerEndDate = Date().addingTimeInterval(Double(timerMinutes) * 60)
             timerRemaining = Double(timerMinutes) * 60
         }
+        lastBeatTick = -1
+        activeBeat = -1
         push()
         engine.start()
         isRunning = engine.isRunning
@@ -94,6 +102,7 @@ final class MetronomeModel: ObservableObject {
         isRunning = engine.isRunning
         stopDriver()
         timerEndDate = nil
+        activeBeat = -1
     }
 
     func setBPM(_ value: Double) {
@@ -108,7 +117,7 @@ final class MetronomeModel: ObservableObject {
 
     private func startDriver() {
         stopDriver()
-        let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+        let t = Timer(timeInterval: 0.02, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.driverTick()
             }
@@ -125,9 +134,18 @@ final class MetronomeModel: ObservableObject {
     private func driverTick() {
         guard isRunning else { return }
 
+        let m = engine.metrics
+
+        // Beat lights: flash whenever the engine crosses a new beat.
+        if m.beatTick != lastBeatTick {
+            lastBeatTick = m.beatTick
+            activeBeat = m.beatIndex
+            beatPulse &+= 1
+        }
+
         // Tempo ramp / stepping, advanced by elapsed measures.
         if rampEnabled, rampEveryBars > 0 {
-            let measure = engine.currentMeasure
+            let measure = m.measure
             if measure - lastRampMeasure >= rampEveryBars {
                 lastRampMeasure = measure
                 let goingUp = rampTargetBPM >= rampStartBPM

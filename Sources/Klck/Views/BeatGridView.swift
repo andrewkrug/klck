@@ -6,8 +6,10 @@ struct BeatGridView: View {
     var body: some View {
         VStack(spacing: 14) {
             HStack {
-                Text("Beats per measure")
-                    .font(.headline)
+                Text("BEATS PER MEASURE")
+                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .foregroundStyle(DB66.engrave)
+                    .tracking(1.5)
                 Spacer()
                 Stepper(
                     "\(model.beatsPerCycle)",

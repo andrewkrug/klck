@@ -8,8 +8,9 @@ struct KlckApp: App {
         WindowGroup("Klck") {
             ContentView()
                 .environmentObject(model)
-                .frame(minWidth: 760, minHeight: 520)
+                .frame(minWidth: 560, minHeight: 720)
         }
         .windowResizability(.contentMinSize)
+        .defaultSize(width: 620, height: 880)
     }
 }

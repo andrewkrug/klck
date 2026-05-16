@@ -5,8 +5,10 @@ struct PracticePanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Feel & Practice")
-                .font(.headline)
+            Text("FEEL & PRACTICE")
+                .font(.system(size: 13, weight: .heavy, design: .rounded))
+                .foregroundStyle(DB66.engrave)
+                .tracking(1.5)
 
             // Swing + click sound
             HStack(spacing: 24) {

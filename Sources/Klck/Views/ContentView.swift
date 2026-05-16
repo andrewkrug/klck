@@ -2,59 +2,132 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var model: MetronomeModel
-    @State private var showSavePrompt = false
-    @State private var newPresetName = ""
+    @State private var showMemory = false
 
     var body: some View {
-        NavigationSplitView {
-            PresetsSidebar()
-                .navigationSplitViewColumnWidth(min: 200, ideal: 240)
-        } detail: {
+        ZStack {
+            DB66.chassis.ignoresSafeArea()
+
             ScrollView {
-                VStack(spacing: 28) {
-                    TempoView()
-                    Divider()
-                    BeatGridView()
-                    Divider()
-                    SubdivisionMixerView()
-                    Divider()
-                    PracticePanelView()
-                    Divider()
-                    masterControls
+                VStack(spacing: 18) {
+                    brandBar
+
+                    VStack(spacing: 14) {
+                        BeatLightsView()
+                        LCDView()
+                        TransportDeckView(showMemory: $showMemory)
+                    }
+                    .devicePanel()
+
+                    BeatGridView().devicePanel()
+                    SubdivisionMixerView().devicePanel()
+                    PracticePanelView().devicePanel()
                 }
-                .padding(28)
+                .padding(20)
+                .frame(maxWidth: 620)
+                .frame(maxWidth: .infinity)
             }
-            .navigationTitle("Klck")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        newPresetName = ""
-                        showSavePrompt = true
-                    } label: {
-                        Label("Save Preset", systemImage: "square.and.arrow.down")
+        }
+        .preferredColorScheme(.dark)
+        .tint(DB66.ledBeat)
+        .sheet(isPresented: $showMemory) {
+            MemorySheet().environmentObject(model)
+        }
+    }
+
+    private var brandBar: some View {
+        HStack {
+            Text("Klck")
+                .font(.system(size: 22, weight: .black, design: .rounded))
+                .foregroundStyle(.white)
+            Text("DR. BEAT–STYLE METRONOME")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(DB66.engrave)
+                .tracking(2)
+            Spacer()
+            Circle()
+                .fill(model.isRunning ? DB66.ledAccent : DB66.ledOff)
+                .frame(width: 10, height: 10)
+                .shadow(color: model.isRunning ? DB66.ledAccent : .clear, radius: 5)
+        }
+        .padding(.horizontal, 4)
+    }
+}
+
+/// Preset library, presented as the unit's "MEMORY" panel.
+struct MemorySheet: View {
+    @EnvironmentObject private var model: MetronomeModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var newName = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("MEMORY")
+                    .font(.system(size: 16, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+                Spacer()
+                Button("Done") { dismiss() }
+                    .buttonStyle(DeviceButtonStyle())
+            }
+
+            HStack(spacing: 8) {
+                TextField("Preset name", text: $newName)
+                    .textFieldStyle(.roundedBorder)
+                Button("SAVE") {
+                    model.savePreset(named: newName)
+                    newName = ""
+                }
+                .buttonStyle(DeviceButtonStyle(tint: (DB66.startTop, DB66.startBot), prominent: true))
+            }
+
+            Divider().overlay(DB66.panelEdge)
+
+            if model.presets.isEmpty {
+                Text("No presets stored")
+                    .font(.callout)
+                    .foregroundStyle(DB66.engrave)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 24)
+            } else {
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(model.presets) { preset in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(preset.name)
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(.white)
+                                    Text("\(Int(preset.bpm)) BPM · \(preset.beatsPerCycle)/4")
+                                        .font(.caption)
+                                        .foregroundStyle(DB66.engrave)
+                                }
+                                Spacer()
+                                Button("LOAD") {
+                                    model.apply(preset)
+                                    dismiss()
+                                }
+                                .buttonStyle(DeviceButtonStyle())
+                                Button {
+                                    model.deletePreset(preset)
+                                } label: {
+                                    Image(systemName: "trash")
+                                }
+                                .buttonStyle(DeviceButtonStyle())
+                            }
+                            .padding(10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(DB66.panel)
+                            )
+                        }
                     }
                 }
             }
         }
-        .alert("Save Preset", isPresented: $showSavePrompt) {
-            TextField("Preset name", text: $newPresetName)
-            Button("Save") { model.savePreset(named: newPresetName) }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Stores tempo, meter, accents, and subdivision layers.")
-        }
-    }
-
-    private var masterControls: some View {
-        HStack(spacing: 16) {
-            Image(systemName: "speaker.wave.2.fill")
-                .foregroundStyle(.secondary)
-            Slider(value: $model.masterVolume, in: 0...1)
-            Text("\(Int(model.masterVolume * 100))%")
-                .monospacedDigit()
-                .frame(width: 44, alignment: .trailing)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: 420)
+        .padding(20)
+        .frame(width: 460, height: 420)
+        .background(DB66.chassis)
+        .preferredColorScheme(.dark)
     }
 }

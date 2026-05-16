@@ -1,62 +1,100 @@
 import SwiftUI
 
-struct TempoView: View {
+/// The Dr. Beat–style LCD: backlit pale-green glass with dark segment "ink".
+struct LCDView: View {
     @EnvironmentObject private var model: MetronomeModel
 
+    private var bpmDigits: String {
+        String(format: "%3d", Int(model.bpm))
+    }
+
     var body: some View {
-        VStack(spacing: 18) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(Int(model.bpm))")
-                    .font(.system(size: 84, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-                Text("BPM")
-                    .font(.title3.weight(.medium))
-                    .foregroundStyle(.secondary)
+        VStack(spacing: 10) {
+            // Status row
+            HStack {
+                Text("TEMPO")
+                Spacer()
+                Text(model.isRunning ? "▶ RUN" : "■ STOP")
+            }
+            .font(DB66.lcdFont(13))
+            .foregroundStyle(DB66.lcdInk)
+
+            // Big tempo readout with ghosted "off" segments behind.
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                ZStack(alignment: .trailing) {
+                    Text("888")
+                        .foregroundStyle(DB66.lcdInkDim)
+                    Text(bpmDigits)
+                        .foregroundStyle(DB66.lcdInk)
+                }
+                .font(DB66.lcdFont(76))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("BPM")
+                        .font(DB66.lcdFont(15))
+                    Circle()
+                        .fill(beatDotOn ? DB66.lcdInk : DB66.lcdInkDim)
+                        .frame(width: 14, height: 14)
+                        .animation(.easeOut(duration: 0.07), value: model.beatPulse)
+                }
+                .foregroundStyle(DB66.lcdInk)
             }
 
-            HStack(spacing: 12) {
-                Button {
-                    model.setBPM(model.bpm - 1)
-                } label: {
-                    Image(systemName: "minus").frame(width: 28, height: 28)
-                }
-                Slider(
-                    value: Binding(
-                        get: { model.bpm },
-                        set: { model.setBPM($0) }
-                    ),
-                    in: model.minBPM...model.maxBPM
-                )
-                Button {
-                    model.setBPM(model.bpm + 1)
-                } label: {
-                    Image(systemName: "plus").frame(width: 28, height: 28)
-                }
+            // Segmented info strip
+            HStack(spacing: 0) {
+                lcdField("BEAT", "\(model.beatsPerCycle)/4")
+                lcdDivider
+                lcdField("SUBDIV", subdivLabel)
+                lcdDivider
+                lcdField("SWING", "\(Int(model.swing * 100))%")
+                lcdDivider
+                lcdField("TIMER", timerLabel)
             }
-            .frame(maxWidth: 480)
-
-            HStack(spacing: 16) {
-                Button(action: model.toggle) {
-                    Label(
-                        model.isRunning ? "Stop" : "Start",
-                        systemImage: model.isRunning ? "stop.fill" : "play.fill"
-                    )
-                    .frame(width: 120)
-                    .padding(.vertical, 8)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(model.isRunning ? .red : .accentColor)
-                .keyboardShortcut(.space, modifiers: [])
-
-                Button(action: model.tap) {
-                    Label("Tap", systemImage: "hand.tap.fill")
-                        .frame(width: 100)
-                        .padding(.vertical, 8)
-                }
-                .buttonStyle(.bordered)
-                .keyboardShortcut("t", modifiers: [])
-            }
+            .font(DB66.lcdFont(13))
+            .foregroundStyle(DB66.lcdInk)
         }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 18)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(LinearGradient(
+                    colors: [DB66.lcdBack, DB66.lcdBackEdge],
+                    startPoint: .top, endPoint: .bottom))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.black.opacity(0.55), lineWidth: 3)
+                )
+                .shadow(color: .black.opacity(0.6), radius: 4, y: 2)
+        )
+    }
+
+    private var beatDotOn: Bool {
+        model.isRunning && model.beatPulse % 2 == 0
+    }
+
+    private var subdivLabel: String {
+        if let active = model.layers.first(where: { $0.enabled }) {
+            return active.name.uppercased().prefix(4).description
+        }
+        return "OFF"
+    }
+
+    private var timerLabel: String {
+        guard model.timerEnabled else { return "--:--" }
+        let t = Int(model.isRunning ? model.timerRemaining : Double(model.timerMinutes * 60))
+        return String(format: "%d:%02d", t / 60, t % 60)
+    }
+
+    private func lcdField(_ label: String, _ value: String) -> some View {
+        VStack(spacing: 3) {
+            Text(label).font(DB66.lcdFont(10)).foregroundStyle(DB66.lcdInk.opacity(0.55))
+            Text(value)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var lcdDivider: some View {
+        Rectangle().fill(DB66.lcdInk.opacity(0.25)).frame(width: 1, height: 26)
     }
 }
