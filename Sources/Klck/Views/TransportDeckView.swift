@@ -35,6 +35,15 @@ struct TransportDeckView: View {
                     .buttonStyle(DeviceButtonStyle())
                     .keyboardShortcut("t", modifiers: [])
 
+                Button(model.flashEnabled ? "FLASH ON" : "FLASH OFF") {
+                    model.flashEnabled.toggle()
+                }
+                .buttonStyle(DeviceButtonStyle(
+                    tint: model.flashEnabled
+                        ? (DB66.startTop, DB66.startBot)
+                        : (DB66.btnTop, DB66.btnBot),
+                    prominent: model.flashEnabled))
+
                 Spacer()
 
                 Button("SAVE") { showSave = true }

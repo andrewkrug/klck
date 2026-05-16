@@ -4,7 +4,7 @@ A sample-accurate metronome for macOS, built with SwiftUI and `AVAudioEngine`.
 Designed for practice: per-beat accents, layered subdivisions, swing, a tempo
 trainer, Quiet Count, and a practice timer.
 
-Inspired by the feature set of the Dr. Betotte / Beat Box iOS metronome.
+An open-source, community-supported metronome.
 
 ## Features
 

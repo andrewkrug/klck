@@ -68,7 +68,7 @@ struct ContentView: View {
             Text("Klck")
                 .font(.system(size: 22, weight: .black, design: .rounded))
                 .foregroundStyle(.white)
-            Text("DR. BEAT–STYLE METRONOME")
+            Text("OPEN-SOURCE · COMMUNITY-SUPPORTED METRONOME")
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(DB66.engrave)
                 .tracking(2)

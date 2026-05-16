@@ -46,7 +46,8 @@ final class MetronomeModel: ObservableObject {
     @Published private(set) var timerRemaining: TimeInterval = 0
 
     /// Flash the screen in time with the beat (brighter on the downbeat).
-    @Published var flashEnabled: Bool = true
+    /// Off by default — opt in via the FLASH button or Feel & Practice.
+    @Published var flashEnabled: Bool = false
 
     // MARK: Reference tone generator
 
