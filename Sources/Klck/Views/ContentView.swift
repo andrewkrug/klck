@@ -18,6 +18,8 @@ struct ContentView: View {
                     Divider()
                     SubdivisionMixerView()
                     Divider()
+                    PracticePanelView()
+                    Divider()
                     masterControls
                 }
                 .padding(28)
