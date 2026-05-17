@@ -14,6 +14,10 @@ struct LCDView: View {
             HStack {
                 Text("TEMPO")
                 Spacer()
+                if let status = model.setlistStatus {
+                    Text(status)
+                    Text("·")
+                }
                 Text(model.isRunning ? "▶ RUN" : "■ STOP")
             }
             .font(DB66.lcdFont(13))

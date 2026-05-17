@@ -25,6 +25,8 @@ An open-source, community-supported metronome.
 - **Tempo Trainer** — ramp BPM from a start to a target by +N every M measures
 - **Practice Timer** — run for a set duration with a live countdown, then auto-stop
 - **Beat flash** — the screen pulses in time, brighter on the downbeat (toggle)
+- **Setlists** — chain presets into an ordered list; step with PREV/NEXT
+  (`[` / `]`) or auto-advance each stop after a set number of bars
 
 **Tuner & Tone**
 - **Chromatic tuner** — microphone pitch detection with note name, frequency,
@@ -88,13 +90,18 @@ Under the hood, `make app` runs `./build_app.sh`, which does
    deletes presets.
 8. In **Tuner & Tone**, press **LISTEN** to tune by mic, or enable **Tone**
    for a reference pitch.
+9. In **MEMORY ▸ Setlists**, create a setlist, add presets from the Presets
+   tab (**+SET**), optionally set per-stop auto-advance bars, then step with
+   **PREV/NEXT** on the deck.
 
 ### Keyboard shortcuts
 
-| Key     | Action       |
-|---------|--------------|
-| `Space` | Start / Stop |
-| `T`     | Tap tempo    |
+| Key     | Action            |
+|---------|-------------------|
+| `Space` | Start / Stop      |
+| `T`     | Tap tempo         |
+| `[`     | Setlist previous  |
+| `]`     | Setlist next      |
 
 ### Where presets are stored
 
@@ -118,7 +125,7 @@ Sources/Klck/
 
 ## Roadmap
 
-Planned: setlists / preset chaining, and an iOS companion app.
+Planned: an iOS companion app.
 
 ## License
 

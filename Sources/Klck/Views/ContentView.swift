@@ -86,10 +86,11 @@ struct ContentView: View {
 struct MemorySheet: View {
     @EnvironmentObject private var model: MetronomeModel
     @Environment(\.dismiss) private var dismiss
+    @State private var tab = 0
     @State private var newName = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("MEMORY")
                     .font(.system(size: 16, weight: .black, design: .rounded))
@@ -99,6 +100,23 @@ struct MemorySheet: View {
                     .buttonStyle(DeviceButtonStyle())
             }
 
+            Picker("", selection: $tab) {
+                Text("Presets").tag(0)
+                Text("Setlists").tag(1)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            if tab == 0 { presetsTab } else { SetlistTab() }
+        }
+        .padding(20)
+        .frame(width: 480, height: 520)
+        .background(DB66.chassis)
+        .preferredColorScheme(.dark)
+    }
+
+    private var presetsTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 TextField("Preset name", text: $newName)
                     .textFieldStyle(.roundedBorder)
@@ -108,8 +126,6 @@ struct MemorySheet: View {
                 }
                 .buttonStyle(DeviceButtonStyle(tint: (DB66.startTop, DB66.startBot), prominent: true))
             }
-
-            Divider().overlay(DB66.panelEdge)
 
             if model.presets.isEmpty {
                 Text("No presets stored")
@@ -131,6 +147,10 @@ struct MemorySheet: View {
                                         .foregroundStyle(DB66.engrave)
                                 }
                                 Spacer()
+                                if model.activeSetlist != nil {
+                                    Button("+SET") { model.addToActiveSetlist(preset) }
+                                        .buttonStyle(DeviceButtonStyle())
+                                }
                                 Button("LOAD") {
                                     model.apply(preset)
                                     dismiss()
@@ -144,18 +164,101 @@ struct MemorySheet: View {
                                 .buttonStyle(DeviceButtonStyle())
                             }
                             .padding(10)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(DB66.panel)
-                            )
+                            .background(RoundedRectangle(cornerRadius: 8).fill(DB66.panel))
                         }
                     }
                 }
             }
         }
-        .padding(20)
-        .frame(width: 460, height: 420)
-        .background(DB66.chassis)
-        .preferredColorScheme(.dark)
+    }
+}
+
+/// Setlist manager: create chains of presets and step through them.
+struct SetlistTab: View {
+    @EnvironmentObject private var model: MetronomeModel
+    @State private var newSetName = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                TextField("New setlist name", text: $newSetName)
+                    .textFieldStyle(.roundedBorder)
+                Button("CREATE") {
+                    model.createSetlist(named: newSetName)
+                    newSetName = ""
+                }
+                .buttonStyle(DeviceButtonStyle(tint: (DB66.startTop, DB66.startBot), prominent: true))
+            }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(model.setlists) { set in
+                        let active = set.id == model.activeSetlist?.id
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(set.name)
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(active ? DB66.ledBeat : .white)
+                                Text("\(set.items.count) presets")
+                                    .font(.caption).foregroundStyle(DB66.engrave)
+                            }
+                            Spacer()
+                            Button(active ? "ACTIVE" : "USE") {
+                                model.activateSetlist(set)
+                            }
+                            .buttonStyle(DeviceButtonStyle(
+                                tint: active ? (DB66.startTop, DB66.startBot) : (DB66.btnTop, DB66.btnBot),
+                                prominent: active))
+                            Button {
+                                model.deleteSetlist(set)
+                            } label: { Image(systemName: "trash") }
+                                .buttonStyle(DeviceButtonStyle())
+                        }
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(DB66.panel))
+                    }
+
+                    if let set = model.activeSetlist {
+                        Divider().overlay(DB66.panelEdge).padding(.vertical, 4)
+                        Text("\(set.name.uppercased()) — ORDER")
+                            .font(.system(size: 12, weight: .heavy, design: .rounded))
+                            .foregroundStyle(DB66.engrave).tracking(1.5)
+
+                        if set.items.isEmpty {
+                            Text("Add presets from the Presets tab (+SET).")
+                                .font(.caption).foregroundStyle(DB66.engrave)
+                                .padding(.vertical, 8)
+                        }
+
+                        ForEach(Array(set.items.enumerated()), id: \.element.id) { idx, item in
+                            HStack(spacing: 8) {
+                                Text("\(idx + 1).")
+                                    .font(.body.monospacedDigit())
+                                    .foregroundStyle(idx == model.activeIndex ? DB66.ledBeat : DB66.engrave)
+                                Text(model.preset(for: item.presetID)?.name ?? "‹deleted›")
+                                    .foregroundStyle(.white)
+                                Spacer()
+                                Stepper(
+                                    item.advanceAfterBars == 0
+                                        ? "manual"
+                                        : "\(item.advanceAfterBars) bars",
+                                    value: Binding(
+                                        get: { item.advanceAfterBars },
+                                        set: { model.setAdvanceBars($0, forItemAt: idx) }),
+                                    in: 0...64)
+                                    .fixedSize()
+                                Button {
+                                    model.removeSetlistItem(at: IndexSet(integer: idx))
+                                } label: { Image(systemName: "minus.circle") }
+                                    .buttonStyle(DeviceButtonStyle())
+                            }
+                            .padding(8)
+                            .background(RoundedRectangle(cornerRadius: 6)
+                                .fill(idx == model.activeIndex ? DB66.panel : DB66.panel.opacity(0.5)))
+                        }
+                    }
+                }
+            }
+        }
     }
 }

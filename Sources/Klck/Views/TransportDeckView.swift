@@ -46,6 +46,17 @@ struct TransportDeckView: View {
 
                 Spacer()
 
+                if model.activeSetlist != nil {
+                    Button("◀ PREV") { model.setlistPrev() }
+                        .buttonStyle(DeviceButtonStyle())
+                        .disabled(!model.canSetlistPrev)
+                        .keyboardShortcut("[", modifiers: [])
+                    Button("NEXT ▶") { model.setlistNext() }
+                        .buttonStyle(DeviceButtonStyle())
+                        .disabled(!model.canSetlistNext)
+                        .keyboardShortcut("]", modifiers: [])
+                }
+
                 Button("SAVE") { showSave = true }
                     .buttonStyle(DeviceButtonStyle())
 

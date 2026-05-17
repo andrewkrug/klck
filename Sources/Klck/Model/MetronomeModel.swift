@@ -59,6 +59,14 @@ final class MetronomeModel: ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var presets: [Preset] = []
 
+    // MARK: Setlists
+
+    @Published private(set) var setlists: [Setlist] = []
+    @Published private(set) var activeSetlistID: UUID?
+    @Published private(set) var activeIndex: Int = 0
+
+    private var itemStartMeasure = 0
+
     /// Live transport position for the beat lights (-1 = stopped).
     @Published private(set) var activeBeat: Int = -1
     /// Bumps on every beat — views observe this to flash in time.
@@ -88,6 +96,7 @@ final class MetronomeModel: ObservableObject {
 
     init() {
         loadPresets()
+        loadSetlists()
         push()
     }
 
@@ -113,6 +122,7 @@ final class MetronomeModel: ObservableObject {
         lastBeatTick = -1
         activeBeat = -1
         transportEpoch += 1   // tells the engine to restart from bar 1
+        itemStartMeasure = 0
         isRunning = true
         syncAudio()
         startDriver()
@@ -183,6 +193,16 @@ final class MetronomeModel: ObservableObject {
                 let next = goingUp ? bpm + rampStepBPM : bpm - rampStepBPM
                 let reached = goingUp ? next >= rampTargetBPM : next <= rampTargetBPM
                 bpm = clampedBPM(reached ? rampTargetBPM : next)
+            }
+        }
+
+        // Setlist auto-advance after a configured number of bars.
+        if let set = activeSetlist,
+           activeIndex < set.items.count {
+            let bars = set.items[activeIndex].advanceAfterBars
+            if bars > 0, m.measure - itemStartMeasure >= bars,
+               activeIndex < set.items.count - 1 {
+                setlistGo(to: activeIndex + 1)
             }
         }
 
@@ -266,7 +286,114 @@ final class MetronomeModel: ObservableObject {
 
     func deletePreset(_ preset: Preset) {
         presets.removeAll { $0.id == preset.id }
+        // Drop any setlist stops that referenced it.
+        for i in setlists.indices {
+            setlists[i].items.removeAll { $0.presetID == preset.id }
+        }
+        clampActiveIndex()
         persistPresets()
+        persistSetlists()
+    }
+
+    func preset(for id: UUID) -> Preset? {
+        presets.first { $0.id == id }
+    }
+
+    // MARK: Setlists
+
+    var activeSetlist: Setlist? {
+        guard let id = activeSetlistID else { return nil }
+        return setlists.first { $0.id == id }
+    }
+
+    func createSetlist(named name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let set = Setlist(name: trimmed)
+        setlists.append(set)
+        activeSetlistID = set.id
+        activeIndex = 0
+        persistSetlists()
+    }
+
+    func deleteSetlist(_ set: Setlist) {
+        setlists.removeAll { $0.id == set.id }
+        if activeSetlistID == set.id { activeSetlistID = nil; activeIndex = 0 }
+        persistSetlists()
+    }
+
+    func activateSetlist(_ set: Setlist) {
+        activeSetlistID = set.id
+        setlistGo(to: 0)
+    }
+
+    func deactivateSetlist() {
+        activeSetlistID = nil
+        activeIndex = 0
+    }
+
+    func addToActiveSetlist(_ preset: Preset) {
+        guard let id = activeSetlistID,
+              let idx = setlists.firstIndex(where: { $0.id == id }) else { return }
+        setlists[idx].items.append(SetlistItem(presetID: preset.id))
+        persistSetlists()
+    }
+
+    func removeSetlistItem(at offsets: IndexSet) {
+        guard let id = activeSetlistID,
+              let idx = setlists.firstIndex(where: { $0.id == id }) else { return }
+        setlists[idx].items.remove(atOffsets: offsets)
+        clampActiveIndex()
+        persistSetlists()
+    }
+
+    func moveSetlistItem(from source: IndexSet, to destination: Int) {
+        guard let id = activeSetlistID,
+              let idx = setlists.firstIndex(where: { $0.id == id }) else { return }
+        setlists[idx].items.move(fromOffsets: source, toOffset: destination)
+        persistSetlists()
+    }
+
+    func setAdvanceBars(_ bars: Int, forItemAt index: Int) {
+        guard let id = activeSetlistID,
+              let idx = setlists.firstIndex(where: { $0.id == id }),
+              index < setlists[idx].items.count else { return }
+        setlists[idx].items[index].advanceAfterBars = max(0, bars)
+        persistSetlists()
+    }
+
+    var canSetlistNext: Bool {
+        guard let s = activeSetlist else { return false }
+        return activeIndex < s.items.count - 1
+    }
+
+    var canSetlistPrev: Bool {
+        activeSetlist != nil && activeIndex > 0
+    }
+
+    func setlistNext() { if canSetlistNext { setlistGo(to: activeIndex + 1) } }
+    func setlistPrev() { if canSetlistPrev { setlistGo(to: activeIndex - 1) } }
+
+    /// Jumps to a setlist position and applies its preset.
+    func setlistGo(to index: Int) {
+        guard let set = activeSetlist,
+              index >= 0, index < set.items.count else { return }
+        activeIndex = index
+        itemStartMeasure = engine.metrics.measure
+        if let p = preset(for: set.items[index].presetID) {
+            apply(p)
+        }
+    }
+
+    private func clampActiveIndex() {
+        let count = activeSetlist?.items.count ?? 0
+        if activeIndex >= count { activeIndex = max(0, count - 1) }
+    }
+
+    /// Short status line for the LCD, e.g. "GIG 2/5".
+    var setlistStatus: String? {
+        guard let s = activeSetlist, !s.items.isEmpty else { return nil }
+        return "\(s.name.uppercased().prefix(6)) \(activeIndex + 1)/\(s.items.count)"
     }
 
     // MARK: Persistence
@@ -289,6 +416,22 @@ final class MetronomeModel: ObservableObject {
     private func persistPresets() {
         guard let data = try? JSONEncoder().encode(presets) else { return }
         try? data.write(to: presetsURL, options: .atomic)
+    }
+
+    private var setlistsURL: URL {
+        presetsURL.deletingLastPathComponent().appendingPathComponent("setlists.json")
+    }
+
+    private func loadSetlists() {
+        guard let data = try? Data(contentsOf: setlistsURL) else { return }
+        if let decoded = try? JSONDecoder().decode([Setlist].self, from: data) {
+            setlists = decoded
+        }
+    }
+
+    private func persistSetlists() {
+        guard let data = try? JSONEncoder().encode(setlists) else { return }
+        try? data.write(to: setlistsURL, options: .atomic)
     }
 
     // MARK: Engine sync
