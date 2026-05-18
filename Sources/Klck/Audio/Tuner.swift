@@ -51,6 +51,20 @@ final class Tuner: ObservableObject {
     }
 
     private func beginCapture() {
+        #if os(iOS)
+        // The shared session must be in a recording-capable category before
+        // the input node yields a valid format. macOS has no AVAudioSession.
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playAndRecord, mode: .measurement,
+                                     options: [.defaultToSpeaker, .mixWithOthers])
+            try session.setActive(true)
+        } catch {
+            NSLog("Klck: tuner audio session failed: \(error)")
+            return
+        }
+        #endif
+
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         let sampleRate = format.sampleRate

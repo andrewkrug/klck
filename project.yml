@@ -1,0 +1,41 @@
+# XcodeGen spec for the Klck iOS app.
+#
+# The macOS app does NOT need this — it builds from SwiftPM (`./build_app.sh`).
+# This exists only because an iOS .app must be produced by Xcode. The iOS
+# target compiles the *same* sources in Sources/Klck (platform differences are
+# handled with `#if os(iOS)`), so there is a single source of truth.
+#
+#   brew install xcodegen      # one-time
+#   xcodegen generate          # writes Klck.xcodeproj
+#   open Klck.xcodeproj        # build/run on simulator or device
+#
+# Or use the Makefile: `make ios-project`.
+
+name: Klck
+options:
+  bundleIdPrefix: com.klck
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+targets:
+  Klck-iOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: Sources/Klck
+    info:
+      path: Resources/Klck-iOS-Info.plist
+    settings:
+      base:
+        PRODUCT_NAME: Klck
+        PRODUCT_BUNDLE_IDENTIFIER: com.klck.metronome
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1,2"   # iPhone + iPad
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+        # Set your team for on-device builds (simulator needs none):
+        # DEVELOPMENT_TEAM: XXXXXXXXXX

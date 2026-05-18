@@ -1,5 +1,8 @@
 import Foundation
 import Combine
+#if os(iOS)
+import UIKit
+#endif
 
 /// Per-beat accent state.
 enum BeatAccent: Int {
@@ -124,16 +127,26 @@ final class MetronomeModel: ObservableObject {
         transportEpoch += 1   // tells the engine to restart from bar 1
         itemStartMeasure = 0
         isRunning = true
+        setIdleTimerDisabled(true)
         syncAudio()
         startDriver()
     }
 
     private func stopRunning() {
         isRunning = false
+        setIdleTimerDisabled(false)
         stopDriver()
         timerEndDate = nil
         activeBeat = -1
         syncAudio()
+    }
+
+    /// Keep the screen lit while practicing so the LCD/beat lights stay
+    /// visible. No-op on macOS, which never auto-dims a running app's window.
+    private func setIdleTimerDisabled(_ disabled: Bool) {
+        #if os(iOS)
+        UIApplication.shared.isIdleTimerDisabled = disabled
+        #endif
     }
 
     /// Runs the audio hardware whenever the metronome *or* the tone needs it.
