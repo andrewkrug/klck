@@ -1,5 +1,9 @@
 # Klck
 
+<p align="center">
+  <img src="Resources/AppIcon.png" width="160" height="160" alt="Klck app icon">
+</p>
+
 A sample-accurate metronome for macOS and iOS, built with SwiftUI and `AVAudioEngine`.
 Designed for practice: per-beat accents, layered subdivisions, swing, a tempo
 trainer, Quiet Count, and a practice timer.

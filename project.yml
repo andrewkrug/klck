@@ -25,8 +25,7 @@ targets:
     deploymentTarget: "16.0"
     sources:
       - path: Sources/Klck
-    info:
-      path: Resources/Klck-iOS-Info.plist
+      - path: Resources/Assets.xcassets
     settings:
       base:
         PRODUCT_NAME: Klck
@@ -35,7 +34,22 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"   # iPhone + iPad
-        GENERATE_INFOPLIST_FILE: NO
         ENABLE_USER_SCRIPT_SANDBOXING: YES
-        # Set your team for on-device builds (simulator needs none):
-        # DEVELOPMENT_TEAM: XXXXXXXXXX
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Info.plist is synthesized at build time from these INFOPLIST_KEY_*
+        # settings — project.yml is the only source of truth, so a linter
+        # rewriting Resources/Klck-iOS-Info.plist can no longer drop our keys.
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Klck uses the microphone to tune your instrument."
+        INFOPLIST_KEY_UIBackgroundModes: "audio"
+        INFOPLIST_KEY_UIUserInterfaceStyle: "Dark"
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.music"
+        # All four orientations — required by Apple for iPad. Layout adapts
+        # to horizontalSizeClass, so iPhone landscape still uses the compact
+        # layout and iPad picks up the regular (wide DB-66) layout.
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        # Paid Apple Developer Individual team — Xcode auto-issues profiles
+        # on first `-allowProvisioningUpdates` build.
+        DEVELOPMENT_TEAM: S5N6TKYXS6
+        CODE_SIGN_STYLE: Automatic

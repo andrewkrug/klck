@@ -2,6 +2,8 @@
 .swiftpm/
 *.app/
 DerivedData/
+build/
+Resources/icon-gen/
 .DS_Store
 .vscode/
 xcuserdata/
