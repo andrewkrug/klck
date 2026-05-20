@@ -1,0 +1,55 @@
+# XcodeGen spec for the Klck iOS app.
+#
+# The macOS app does NOT need this — it builds from SwiftPM (`./build_app.sh`).
+# This exists only because an iOS .app must be produced by Xcode. The iOS
+# target compiles the *same* sources in Sources/Klck (platform differences are
+# handled with `#if os(iOS)`), so there is a single source of truth.
+#
+#   brew install xcodegen      # one-time
+#   xcodegen generate          # writes Klck.xcodeproj
+#   open Klck.xcodeproj        # build/run on simulator or device
+#
+# Or use the Makefile: `make ios-project`.
+
+name: Klck
+options:
+  bundleIdPrefix: com.klck
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+targets:
+  Klck-iOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: Sources/Klck
+      - path: Resources/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_NAME: Klck
+        PRODUCT_BUNDLE_IDENTIFIER: com.klck.metronome
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1,2"   # iPhone + iPad
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Info.plist is synthesized at build time from these INFOPLIST_KEY_*
+        # settings — project.yml is the only source of truth, so a linter
+        # rewriting Resources/Klck-iOS-Info.plist can no longer drop our keys.
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Klck uses the microphone to tune your instrument."
+        INFOPLIST_KEY_UIBackgroundModes: "audio"
+        INFOPLIST_KEY_UIUserInterfaceStyle: "Dark"
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.music"
+        # All four orientations — required by Apple for iPad. Layout adapts
+        # to horizontalSizeClass, so iPhone landscape still uses the compact
+        # layout and iPad picks up the regular (wide DB-66) layout.
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        # Paid Apple Developer Individual team — Xcode auto-issues profiles
+        # on first `-allowProvisioningUpdates` build.
+        DEVELOPMENT_TEAM: S5N6TKYXS6
+        CODE_SIGN_STYLE: Automatic

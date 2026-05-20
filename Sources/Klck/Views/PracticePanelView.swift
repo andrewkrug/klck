@@ -2,6 +2,9 @@ import SwiftUI
 
 struct PracticePanelView: View {
     @EnvironmentObject private var model: MetronomeModel
+    @Environment(\.horizontalSizeClass) private var hSize
+
+    private var isCompact: Bool { hSize == .compact }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -14,10 +17,11 @@ struct PracticePanelView: View {
                 Text("Swing \(Int(model.swing * 100))%")
                     .font(.subheadline)
                 Slider(value: $model.swing, in: 0...0.6)
-                    .frame(maxWidth: 320)
+                    .frame(maxWidth: isCompact ? .infinity : 320)
             }
 
-            HStack(spacing: 24) {
+            // Two pickers per row on iPad/macOS; one per row on iPhone.
+            adaptiveRow(spacing: isCompact ? 12 : 24) {
                 soundPicker("Accent sound", selection: $model.accentSound)
                 soundPicker("Beat sound", selection: $model.beatSound)
             }
@@ -28,7 +32,7 @@ struct PracticePanelView: View {
                 .font(.subheadline)
 
             DisclosureGroup {
-                HStack(spacing: 16) {
+                adaptiveRow {
                     Toggle("Enable", isOn: $model.quietEnabled)
                         .toggleStyle(.switch)
                     Stepper("Play \(model.quietPlayBars) bars",
@@ -48,7 +52,7 @@ struct PracticePanelView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Toggle("Ramp tempo while running", isOn: $model.rampEnabled)
                         .toggleStyle(.switch)
-                    HStack(spacing: 14) {
+                    adaptiveRow {
                         bpmField("From", $model.rampStartBPM)
                         bpmField("To", $model.rampTargetBPM)
                         Stepper("+\(Int(model.rampStepBPM)) BPM",
@@ -67,7 +71,7 @@ struct PracticePanelView: View {
             }
 
             DisclosureGroup {
-                HStack(spacing: 16) {
+                adaptiveRow {
                     Toggle("Enable", isOn: $model.timerEnabled)
                         .toggleStyle(.switch)
                     Stepper("\(model.timerMinutes) min",
@@ -114,7 +118,21 @@ struct PracticePanelView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 240)
+            .frame(maxWidth: isCompact ? .infinity : 240)
+        }
+    }
+
+    /// HStack on iPad/macOS, VStack on iPhone — keeps wide control rows from
+    /// clipping at iPhone-SE widths without bloating iPad/macOS layouts.
+    @ViewBuilder
+    private func adaptiveRow<Content: View>(
+        spacing: CGFloat = 16,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        if isCompact {
+            VStack(alignment: .leading, spacing: spacing) { content() }
+        } else {
+            HStack(spacing: spacing) { content() }
         }
     }
 }

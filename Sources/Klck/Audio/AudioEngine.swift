@@ -154,6 +154,7 @@ final class AudioEngine {
     /// *either* needs output, and `stop()` when neither does.
     func start() {
         guard !isRunning else { return }
+        activateSession()
         configureIfNeeded()
         do {
             try engine.start()
@@ -161,6 +162,21 @@ final class AudioEngine {
         } catch {
             NSLog("Klck: audio engine failed to start: \(error)")
         }
+    }
+
+    /// iOS requires an active `AVAudioSession`; macOS has none. `.playback`
+    /// keeps the click audible with the silent switch on and (paired with the
+    /// `audio` background mode) lets practice continue when the screen locks.
+    private func activateSession() {
+        #if os(iOS)
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true)
+        } catch {
+            NSLog("Klck: audio session activation failed: \(error)")
+        }
+        #endif
     }
 
     func stop() {

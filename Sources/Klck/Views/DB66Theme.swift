@@ -61,16 +61,21 @@ extension View {
 
 /// Beveled rubber button.
 struct DeviceButtonStyle: ButtonStyle {
+    @Environment(\.horizontalSizeClass) private var hSize
     var tint: (Color, Color) = (DB66.btnTop, DB66.btnBot)
     var prominent = false
 
+    private var isCompact: Bool { hSize == .compact }
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .bold, design: .rounded))
+            .font(.system(size: isCompact ? 12 : 13, weight: .bold, design: .rounded))
             .foregroundStyle(prominent ? Color.white : DB66.engrave)
-            .padding(.vertical, 10)
-            .padding(.horizontal, 14)
-            .frame(minWidth: 56)
+            .padding(.vertical, isCompact ? 8 : 10)
+            .padding(.horizontal, isCompact ? 8 : 14)
+            .frame(minWidth: isCompact ? 44 : 56)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(LinearGradient(

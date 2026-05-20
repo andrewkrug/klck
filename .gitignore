@@ -2,8 +2,10 @@
 .swiftpm/
 *.app/
 DerivedData/
+build/
+Resources/icon-gen/
 .DS_Store
 .vscode/
 xcuserdata/
-*.xcodeproj/*
-!*.xcodeproj/project.pbxproj
+# Klck.xcodeproj is generated from project.yml (the source of truth).
+Klck.xcodeproj/

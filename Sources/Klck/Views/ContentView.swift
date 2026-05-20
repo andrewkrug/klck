@@ -2,20 +2,23 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var model: MetronomeModel
+    @Environment(\.horizontalSizeClass) private var hSize
     @State private var showMemory = false
     @State private var showSave = false
     @State private var saveName = ""
     @State private var flash = 0.0
+
+    private var isCompact: Bool { hSize == .compact }
 
     var body: some View {
         ZStack {
             DB66.chassis.ignoresSafeArea()
 
             ScrollView {
-                VStack(spacing: 18) {
+                VStack(spacing: isCompact ? 12 : 18) {
                     brandBar
 
-                    VStack(spacing: 14) {
+                    VStack(spacing: isCompact ? 10 : 14) {
                         BeatLightsView()
                         LCDView()
                         TransportDeckView(showMemory: $showMemory, showSave: $showSave)
@@ -27,7 +30,8 @@ struct ContentView: View {
                     PracticePanelView().devicePanel()
                     TunerToneView().devicePanel()
                 }
-                .padding(20)
+                .padding(.horizontal, isCompact ? 22 : 20)
+                .padding(.vertical, isCompact ? 16 : 20)
                 .frame(maxWidth: 620)
                 .frame(maxWidth: .infinity)
             }
@@ -68,17 +72,25 @@ struct ContentView: View {
             Text("Klck")
                 .font(.system(size: 22, weight: .black, design: .rounded))
                 .foregroundStyle(.white)
-            Text("OPEN-SOURCE · COMMUNITY-SUPPORTED METRONOME")
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .foregroundStyle(DB66.engrave)
-                .tracking(2)
+            // Tagline only on iPad/macOS — it wraps badly at iPhone widths.
+            if !isCompact {
+                Text("OPEN-SOURCE · COMMUNITY-SUPPORTED METRONOME")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(DB66.engrave)
+                    .tracking(2)
+            }
             Spacer()
             Circle()
                 .fill(model.isRunning ? DB66.ledAccent : DB66.ledOff)
                 .frame(width: 10, height: 10)
                 .shadow(color: model.isRunning ? DB66.ledAccent : .clear, radius: 5)
         }
-        .padding(.horizontal, 4)
+        // Extra breathing room on iPhone so "Klck" + LED clear rounded
+        // corners and the dynamic-island area on Pro models. The LED has a
+        // 5pt shadow halo, so it needs noticeably more right-side margin.
+        .padding(.leading, isCompact ? 8 : 4)
+        .padding(.trailing, isCompact ? 14 : 4)
+        .padding(.top, isCompact ? 6 : 0)
     }
 }
 
@@ -110,7 +122,12 @@ struct MemorySheet: View {
             if tab == 0 { presetsTab } else { SetlistTab() }
         }
         .padding(20)
+        // Fixed pane on macOS; on iOS the sheet sizes itself to the device.
+        #if os(macOS)
         .frame(width: 480, height: 520)
+        #else
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #endif
         .background(DB66.chassis)
         .preferredColorScheme(.dark)
     }

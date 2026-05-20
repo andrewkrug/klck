@@ -1,6 +1,10 @@
 # Klck
 
-A sample-accurate metronome for macOS, built with SwiftUI and `AVAudioEngine`.
+<p align="center">
+  <img src="Resources/AppIcon.png" width="160" height="160" alt="Klck app icon">
+</p>
+
+A sample-accurate metronome for macOS and iOS, built with SwiftUI and `AVAudioEngine`.
 Designed for practice: per-beat accents, layered subdivisions, swing, a tempo
 trainer, Quiet Count, and a practice timer.
 
@@ -112,20 +116,43 @@ Under the hood, `make app` runs `./build_app.sh`, which does
 ## Project layout
 
 ```
-Package.swift              SwiftPM manifest (macOS 13+ executable)
-Makefile                   build/run/clean targets
-build_app.sh               swift build + .app bundle assembly
-Resources/Info.plist       bundle metadata
-Sources/Klck/
-  KlckApp.swift            @main App entry
-  Audio/AudioEngine.swift  sample-accurate render engine
-  Model/                   MetronomeModel, SubLayer, Preset
-  Views/                   SwiftUI interface
+Package.swift                 SwiftPM manifest (macOS 13+ / iOS 16+)
+Makefile                      build/run/clean + ios-project targets
+build_app.sh                  swift build + macOS .app assembly
+project.yml                   XcodeGen spec for the iOS app
+Resources/Info.plist          macOS bundle metadata
+Resources/Klck-iOS-Info.plist iOS bundle metadata
+Sources/Klck/                 shared sources (macOS + iOS)
+  KlckApp.swift               @main App entry (cross-platform Scene)
+  Audio/AudioEngine.swift     sample-accurate render engine
+  Model/                      MetronomeModel, SubLayer, Preset
+  Views/                      SwiftUI interface
 ```
+
+The iOS and macOS apps build from the **same** `Sources/Klck` files; the few
+platform differences (audio session, window sizing, idle timer) are handled
+with `#if os(iOS)` / `#if os(macOS)`.
+
+## iOS
+
+The macOS app builds without Xcode (`./build_app.sh`). An iOS `.app` must be
+produced by Xcode, so the iOS target is described declaratively in
+`project.yml` and the Xcode project is generated from it:
+
+```sh
+brew install xcodegen     # one-time
+make ios-project          # generates Klck.xcodeproj from project.yml
+open Klck.xcodeproj        # build/run on a simulator or device
+```
+
+`Klck.xcodeproj` is generated and git-ignored — `project.yml` is the source of
+truth. For on-device builds, set `DEVELOPMENT_TEAM` in `project.yml`. The iOS
+build enables background audio (the click survives a screen lock) and keeps the
+screen awake while running.
 
 ## Roadmap
 
-Planned: an iOS companion app.
+iOS app: ready to build (see above). Next: a Watch companion and MIDI clock out.
 
 ## License
 
