@@ -10,6 +10,14 @@ trainer, Quiet Count, and a practice timer.
 
 An open-source, community-supported metronome.
 
+<p align="center">
+  <img src="Resources/screenshots/iphone.png" alt="Klck on iPhone" width="260">
+  &nbsp;&nbsp;
+  <img src="Resources/screenshots/ipad.png" alt="Klck on iPad" width="360">
+</p>
+
+<p align="center"><sub>iPhone (compact layout) and iPad (wide DB-66 layout) &mdash; the same Sources/Klck files build both.</sub></p>
+
 ## Features
 
 **Core**
