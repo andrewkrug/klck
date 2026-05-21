@@ -67,24 +67,90 @@ struct TunerToneView: View {
 
     private var inTune: Bool { tuner.hasSignal && abs(tuner.cents) < 5 }
 
+    /// Strobe-tuner style needle gauge. The needle pivots from the bottom of
+    /// the gauge: vertical = perfectly in tune, swung left = flat, right =
+    /// sharp. The full ±70° swing maps to ±50 cents.
     private var centsMeter: some View {
         GeometryReader { geo in
             let w = geo.size.width
+            let h = geo.size.height
+            let center = CGPoint(x: w / 2, y: h - 2)
+            let radius = min(w / 2 - 8, h - 6)
             let clamped = max(-50, min(50, tuner.cents))
-            let x = w / 2 + CGFloat(clamped / 50) * (w / 2 - 10)
-            ZStack(alignment: .leading) {
-                Capsule().fill(DB66.lcdInk.opacity(0.18)).frame(height: 6)
-                Rectangle().fill(DB66.lcdInk.opacity(0.5))
-                    .frame(width: 2, height: 18)
-                    .position(x: w / 2, y: 9)
+            let needleAngle = Double(clamped) / 50 * 70
+
+            ZStack {
+                // Backdrop arc (the gauge face).
+                Path { p in
+                    p.addArc(center: center, radius: radius,
+                             startAngle: .degrees(-160), endAngle: .degrees(-20),
+                             clockwise: false)
+                }
+                .stroke(DB66.lcdInk.opacity(0.22), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+
+                // "In tune" green segment (~±5 cents).
+                Path { p in
+                    p.addArc(center: center, radius: radius,
+                             startAngle: .degrees(-97), endAngle: .degrees(-83),
+                             clockwise: false)
+                }
+                .stroke(Color.green.opacity(0.85), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+
+                // Major tick marks at -50, -25, 0, +25, +50 cents.
+                ForEach([-50, -25, 0, 25, 50], id: \.self) { tick in
+                    tickMark(cents: tick, center: center, radius: radius,
+                             length: tick == 0 ? 12 : 8,
+                             weight: tick == 0 ? 2.5 : 1.5)
+                }
+
+                // Needle.
+                Path { p in
+                    p.move(to: CGPoint(x: w / 2, y: h - 2))
+                    p.addLine(to: CGPoint(x: w / 2, y: h - radius - 2))
+                }
+                .stroke(inTune ? Color.green : DB66.lcdInk,
+                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                .rotationEffect(.degrees(tuner.hasSignal ? needleAngle : 0),
+                                anchor: UnitPoint(x: 0.5, y: (h - 2) / h))
+                .animation(.spring(response: 0.18, dampingFraction: 0.75),
+                           value: tuner.cents)
+                .opacity(tuner.hasSignal ? 1 : 0.35)
+
+                // Pivot cap.
                 Circle()
-                    .fill(inTune ? Color.green : DB66.lcdInk)
-                    .frame(width: 18, height: 18)
-                    .position(x: tuner.hasSignal ? x : w / 2, y: 9)
-                    .animation(.easeOut(duration: 0.12), value: tuner.cents)
+                    .fill(DB66.lcdInk)
+                    .frame(width: 9, height: 9)
+                    .position(center)
+
+                // Labels.
+                Text("♭").font(DB66.lcdFont(11)).foregroundStyle(DB66.lcdInk.opacity(0.5))
+                    .position(x: center.x - radius - 2, y: center.y - 4)
+                Text("♯").font(DB66.lcdFont(11)).foregroundStyle(DB66.lcdInk.opacity(0.5))
+                    .position(x: center.x + radius + 2, y: center.y - 4)
             }
         }
-        .frame(height: 20)
+        .frame(height: 80)
+    }
+
+    /// Draws one tick at the given cents value along the gauge arc.
+    private func tickMark(cents: Int, center: CGPoint, radius: CGFloat,
+                          length: CGFloat, weight: CGFloat) -> some View {
+        let angle = Double(cents) / 50 * 70 - 90   // gauge top = 0 cents
+        let rad = angle * .pi / 180
+        let inner = CGPoint(
+            x: center.x + (radius - length) * CGFloat(cos(rad)),
+            y: center.y + (radius - length) * CGFloat(sin(rad))
+        )
+        let outer = CGPoint(
+            x: center.x + radius * CGFloat(cos(rad)),
+            y: center.y + radius * CGFloat(sin(rad))
+        )
+        return Path { p in
+            p.move(to: inner)
+            p.addLine(to: outer)
+        }
+        .stroke(DB66.lcdInk.opacity(0.7),
+                style: StrokeStyle(lineWidth: weight, lineCap: .round))
     }
 
     // MARK: Tone generator
