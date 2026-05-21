@@ -56,12 +56,20 @@ struct TunerToneView: View {
                 .padding(10)
         }
         .overlay(alignment: .bottom) {
-            if tuner.permissionDenied {
-                Text("Microphone access denied — enable it in System Settings ▸ Privacy.")
-                    .font(.caption)
-                    .foregroundStyle(DB66.ledAccent)
-                    .padding(.bottom, 6)
+            VStack(spacing: 2) {
+                if tuner.permissionDenied {
+                    Text("Microphone access denied — enable it in Settings ▸ Privacy & Security ▸ Microphone.")
+                        .font(.caption)
+                        .foregroundStyle(DB66.ledAccent)
+                } else if let error = tuner.lastError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(DB66.ledAccent)
+                }
             }
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 6)
         }
     }
 
@@ -157,26 +165,34 @@ struct TunerToneView: View {
 
     private var toneControls: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
+            // Top row: toggle + note stepper. Always fits at iPhone-SE width.
+            HStack(spacing: 10) {
                 Toggle("Tone", isOn: $model.toneEnabled)
                     .toggleStyle(.switch)
                     .fixedSize()
+
+                Spacer(minLength: 4)
 
                 Button { stepTone(-1) } label: { Image(systemName: "minus") }
                     .buttonStyle(DeviceButtonStyle())
                 Text(MetronomeModel.noteName(for: model.toneFrequency))
                     .font(.system(size: 17, weight: .bold, design: .rounded))
-                    .frame(width: 56)
+                    .frame(minWidth: 48)
+                    .lineLimit(1)
                 Button { stepTone(1) } label: { Image(systemName: "plus") }
                     .buttonStyle(DeviceButtonStyle())
 
-                Text(String(format: "%.1f Hz", model.toneFrequency))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(DB66.engrave)
-                Spacer()
+                Spacer(minLength: 4)
+
                 Button("A 440") { model.toneFrequency = 440 }
                     .buttonStyle(DeviceButtonStyle())
             }
+
+            // Second informational row: current Hz reading, always visible.
+            Text(String(format: "%.1f Hz", model.toneFrequency))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(DB66.engrave)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 12) {
                 Image(systemName: "speaker.wave.2.fill").foregroundStyle(.secondary)

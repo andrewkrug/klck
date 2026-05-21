@@ -12,6 +12,10 @@ final class Tuner: ObservableObject {
     @Published private(set) var noteName: String = "—"
     @Published private(set) var cents: Double = 0          // -50 ... +50
     @Published private(set) var permissionDenied = false
+    /// Surfaces audio-pipeline failures to the UI. Cleared on every successful
+    /// `start()`. Visible in the tuner panel so a broken session doesn't look
+    /// indistinguishable from "no input detected yet".
+    @Published private(set) var lastError: String?
 
     private let engine = AVAudioEngine()
     private let analysisQueue = DispatchQueue(label: "com.klck.tuner.analysis")
@@ -25,7 +29,8 @@ final class Tuner: ObservableObject {
 
     func start() {
         guard !isListening else { return }
-        AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+        lastError = nil
+        requestMicrophonePermission { [weak self] granted in
             Task { @MainActor in
                 guard let self else { return }
                 if granted {
@@ -36,6 +41,21 @@ final class Tuner: ObservableObject {
                 }
             }
         }
+    }
+
+    /// iOS 17+ deprecated `AVCaptureDevice.requestAccess(for: .audio)` for
+    /// AVAudioSession-based recording in favor of `AVAudioApplication`. Use
+    /// the new API where available; fall back for older OS versions.
+    private func requestMicrophonePermission(_ completion: @escaping @Sendable (Bool) -> Void) {
+        #if os(iOS)
+        if #available(iOS 17.0, *) {
+            AVAudioApplication.requestRecordPermission(completionHandler: completion)
+        } else {
+            AVAudioSession.sharedInstance().requestRecordPermission(completion)
+        }
+        #else
+        AVCaptureDevice.requestAccess(for: .audio, completionHandler: completion)
+        #endif
     }
 
     func stop() {
@@ -53,27 +73,46 @@ final class Tuner: ObservableObject {
     private func beginCapture() {
         #if os(iOS)
         // The shared session must be in a recording-capable category before
-        // the input node yields a valid format. macOS has no AVAudioSession.
+        // the input node yields a valid format. `.default` mode (not
+        // `.measurement`) keeps the standard input path on iPad's mic array,
+        // and we drop `.mixWithOthers` so the engine reliably grabs the
+        // input route.
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .measurement,
-                                     options: [.defaultToSpeaker, .mixWithOthers])
-            try session.setActive(true)
+            try session.setCategory(.playAndRecord, mode: .default,
+                                     options: [.defaultToSpeaker,
+                                               .allowBluetooth,
+                                               .allowBluetoothA2DP])
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
+            lastError = "Audio session: \(error.localizedDescription)"
             NSLog("Klck: tuner audio session failed: \(error)")
             return
         }
         #endif
 
-        let input = engine.inputNode
+        // Reset the engine so a previous failed attempt doesn't poison the
+        // input node (taps installed on a stale node never deliver buffers).
+        if engine.isRunning { engine.stop() }
+        engine.reset()
 
-        // Install the tap with a nil format — AVAudioEngine resolves the
-        // input bus's format at `engine.start()` time. On iPad the input
-        // route can take a few hundred ms to finish reconfiguring after a
-        // session-category change, so reading `outputFormat(forBus:)` here
-        // sometimes returns `sampleRate == 0` and silently aborts capture.
-        // Reading the rate from each delivered buffer side-steps that race.
-        input.installTap(onBus: 0, bufferSize: 4096, format: nil) { [weak self] buffer, _ in
+        let input = engine.inputNode
+        let hwFormat = input.outputFormat(forBus: 0)
+
+        // Pick a format the input bus will actually deliver: prefer the
+        // hardware format (matches the mic's native rate / channel count),
+        // and fall back to mono float-32 @ 48k if the bus still hasn't
+        // resolved one. AVAudioEngine refuses to install a tap with a
+        // format whose sampleRate is 0.
+        let tapFormat: AVAudioFormat = {
+            if hwFormat.sampleRate > 0 { return hwFormat }
+            return AVAudioFormat(commonFormat: .pcmFormatFloat32,
+                                  sampleRate: 48_000,
+                                  channels: 1,
+                                  interleaved: false)!
+        }()
+
+        input.installTap(onBus: 0, bufferSize: 4096, format: tapFormat) { [weak self] buffer, _ in
             guard let self,
                   let channel = buffer.floatChannelData?[0] else { return }
             let sampleRate = buffer.format.sampleRate
@@ -89,7 +128,9 @@ final class Tuner: ObservableObject {
         do {
             try engine.start()
             isListening = true
+            lastError = nil
         } catch {
+            lastError = "Audio engine: \(error.localizedDescription)"
             NSLog("Klck: tuner failed to start: \(error)")
             input.removeTap(onBus: 0)
         }
