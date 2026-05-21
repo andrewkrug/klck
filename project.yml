@@ -26,6 +26,7 @@ targets:
     sources:
       - path: Sources/Klck
       - path: Resources/Assets.xcassets
+      - path: Resources/PrivacyInfo.xcprivacy
     settings:
       base:
         PRODUCT_NAME: Klck

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Klck does not track users. -->
+    <key>NSPrivacyTracking</key>
+    <false/>
+
+    <!-- No tracking domains contacted. -->
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+
+    <!-- No data collected. Preset / setlist files live entirely in the
+         app's sandbox; the microphone is used only for on-device pitch
+         detection in the tuner and is never transmitted. -->
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
+
+    <!-- No use of Apple's "required reason" APIs (UserDefaults,
+         file-timestamp APIs, system-boot-time APIs, disk-space APIs,
+         active-keyboard APIs). -->
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array/>
+</dict>
+</plist>
