@@ -151,7 +151,10 @@ struct TunerToneView: View {
                         style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                 .rotationEffect(.degrees(tuner.hasSignal ? needleAngle : 0),
                                 anchor: UnitPoint(x: 0.5, y: (h - 2) / h))
-                .animation(.spring(response: 0.18, dampingFraction: 0.75),
+                // Snappier spring — at ~47 updates/sec the animation needs
+                // to finish well before the next sample arrives, otherwise
+                // the needle visibly trails the actual pitch.
+                .animation(.spring(response: 0.08, dampingFraction: 0.7),
                            value: tuner.cents)
                 .opacity(tuner.hasSignal ? 1 : 0.35)
 
@@ -411,7 +414,7 @@ struct FullscreenTunerView: View {
                         style: StrokeStyle(lineWidth: needleWidth, lineCap: .round))
                 .rotationEffect(.degrees(tuner.hasSignal ? needleAngle : 0),
                                 anchor: UnitPoint(x: 0.5, y: (h - 4) / h))
-                .animation(.spring(response: 0.18, dampingFraction: 0.75),
+                .animation(.spring(response: 0.08, dampingFraction: 0.7),
                            value: tuner.cents)
                 .opacity(tuner.hasSignal ? 1 : 0.35)
 
