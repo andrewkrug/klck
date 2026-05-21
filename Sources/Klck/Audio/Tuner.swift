@@ -141,9 +141,21 @@ final class Tuner: ObservableObject {
             hasSignal = false
             return
         }
+        // Reject obvious octave jumps: if the new reading is more than ±5
+        // semitones from the current smoothed value, prefer the existing
+        // estimate. This is a cheap defense against transient mis-detections
+        // when the autocorrelator briefly locks onto a harmonic.
+        if smoothed > 0 {
+            let semitoneDelta = abs(12 * log2(freq / smoothed))
+            if semitoneDelta > 5 {
+                return
+            }
+        }
         hasSignal = true
-        // Exponential smoothing to steady the readout.
-        smoothed = smoothed == 0 ? freq : smoothed * 0.8 + freq * 0.2
+        // Exponential smoothing to steady the readout. Heavier weight on
+        // the running average reduces flicker without making the tuner feel
+        // sluggish.
+        smoothed = smoothed == 0 ? freq : smoothed * 0.85 + freq * 0.15
         frequency = smoothed
 
         let midi = 69 + 12 * log2(smoothed / 440)
@@ -157,21 +169,21 @@ final class Tuner: ObservableObject {
 
     nonisolated static func detectPitch(samples: [Float], sampleRate: Double) -> Double? {
         let n = samples.count
-        guard n > 1024 else { return nil }
+        guard n > 2048 else { return nil }   // need a couple of frames for 50Hz
 
         // Remove DC and measure level.
         var mean: Float = 0
         for s in samples { mean += s }
         mean /= Float(n)
 
-        var rms: Float = 0
+        var energy: Float = 0    // ACF at lag 0 — used as a peak threshold.
         var buf = [Float](repeating: 0, count: n)
         for i in 0..<n {
             let v = samples[i] - mean
             buf[i] = v
-            rms += v * v
+            energy += v * v
         }
-        rms = (rms / Float(n)).squareRoot()
+        let rms = (energy / Float(n)).squareRoot()
         guard rms > 0.01 else { return nil }   // too quiet — ignore
 
         let minFreq = 50.0
@@ -180,28 +192,54 @@ final class Tuner: ObservableObject {
         let maxLag = min(Int(sampleRate / minFreq), n - 1)
         guard maxLag > minLag else { return nil }
 
-        var bestLag = -1
-        var bestValue: Float = 0
+        // Take the FIRST significant local maximum of the autocorrelation
+        // function. Picking the global maximum is the classic octave-down
+        // bug — for periodic input the ACF peaks at every multiple of the
+        // fundamental period, and a later (lower-frequency) peak can edge
+        // out the true first peak due to windowing or strong even
+        // harmonics. The first peak is always the fundamental.
+        //
+        // Subtlety: we start scanning at `minLag`, but the lag-0 lobe of
+        // the ACF can still be near full magnitude there (especially for
+        // bass notes), so a naïve "first descent from rising" would
+        // misread that lobe as a peak and report a frequency near
+        // sampleRate/minLag — i.e. wildly sharp. Require the ACF to dip
+        // below `dipThreshold` first, which guarantees we're past the
+        // lag-0 envelope before we start trusting peaks.
+        let peakThreshold = energy * 0.4
+        let dipThreshold = peakThreshold * 0.2
+
+        var firstPeakLag = -1
         var prev: Float = 0
         var rising = false
+        var dipped = false
 
         for lag in minLag...maxLag {
             var sum: Float = 0
             for i in 0..<(n - lag) {
                 sum += buf[i] * buf[i + lag]
             }
-            // Track the first strong local maximum after the ACF starts rising.
-            if sum > prev { rising = true }
-            if rising && sum < prev && bestLag == -1 {
-                bestLag = lag - 1
-                bestValue = prev
+
+            if !dipped {
+                if sum < dipThreshold { dipped = true }
+                prev = sum
+                continue
             }
-            if sum > bestValue {
-                bestValue = sum
-                bestLag = lag
+
+            if sum > prev {
+                rising = true
+            } else if rising {
+                // We just descended past a peak that sat at lag - 1.
+                if prev >= peakThreshold {
+                    firstPeakLag = lag - 1
+                    break
+                }
+                // Not significant enough; keep scanning for the next peak.
+                rising = false
             }
             prev = sum
         }
+        let bestLag = firstPeakLag
         guard bestLag > 0 else { return nil }
 
         // Parabolic interpolation around the peak for sub-sample accuracy.

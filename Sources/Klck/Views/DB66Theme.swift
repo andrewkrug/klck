@@ -38,11 +38,16 @@ enum DB66 {
     }
 }
 
-/// A recessed control panel on the chassis.
+/// A recessed control panel on the chassis. Inner padding tightens to 12 on
+/// iPhone so the panel content gets back ~8pt of horizontal room (every
+/// pixel matters at iPhone-SE width).
 struct DevicePanel: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var hSize
+
     func body(content: Content) -> some View {
-        content
-            .padding(16)
+        let inset: CGFloat = hSize == .compact ? 12 : 16
+        return content
+            .padding(inset)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(DB66.panel)
