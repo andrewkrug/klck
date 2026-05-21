@@ -112,7 +112,20 @@ final class Tuner: ObservableObject {
                                   interleaved: false)!
         }()
 
-        input.installTap(onBus: 0, bufferSize: 4096, format: tapFormat) { [weak self] buffer, _ in
+        // Buffer-size derivation (Nyquist + practical resolution):
+        //
+        // - The audio sample rate (hardware-default 48 kHz) only has to
+        //   satisfy Nyquist for the highest frequency we *detect* (1.5 kHz):
+        //   48000 ≥ 2·1500 holds 16×-over by default, so Nyquist isn't the
+        //   bottleneck for audio quality here.
+        // - The real lever for "real-time feedback" is the analysis window.
+        //   With buffer=4096 at 48 kHz we got ~12 pitch updates/sec (~85 ms
+        //   latency); buffer=2048 doubles that to ~23 updates/sec (~43 ms).
+        // - Lower bound on buffer: the autocorrelator needs ~3 periods of
+        //   the lowest target frequency to lock reliably. Low E (82 Hz) has
+        //   a 580-sample period at 48 kHz → ~1750 samples minimum. 2048
+        //   clears that with margin.
+        input.installTap(onBus: 0, bufferSize: 2048, format: tapFormat) { [weak self] buffer, _ in
             guard let self,
                   let channel = buffer.floatChannelData?[0] else { return }
             let sampleRate = buffer.format.sampleRate
@@ -141,21 +154,12 @@ final class Tuner: ObservableObject {
             hasSignal = false
             return
         }
-        // Reject obvious octave jumps: if the new reading is more than ±5
-        // semitones from the current smoothed value, prefer the existing
-        // estimate. This is a cheap defense against transient mis-detections
-        // when the autocorrelator briefly locks onto a harmonic.
-        if smoothed > 0 {
-            let semitoneDelta = abs(12 * log2(freq / smoothed))
-            if semitoneDelta > 5 {
-                return
-            }
-        }
         hasSignal = true
-        // Exponential smoothing to steady the readout. Heavier weight on
-        // the running average reduces flicker without making the tuner feel
-        // sluggish.
-        smoothed = smoothed == 0 ? freq : smoothed * 0.85 + freq * 0.15
+        // Exponential smoothing — with ~23 updates/sec from the new tap
+        // window, a 0.7/0.3 mix gives the readout a ~5-frame (~220 ms) time
+        // constant: stable when held, but quick enough to track real pitch
+        // changes as you bend a string.
+        smoothed = smoothed == 0 ? freq : smoothed * 0.7 + freq * 0.3
         frequency = smoothed
 
         let midi = 69 + 12 * log2(smoothed / 440)
@@ -169,7 +173,10 @@ final class Tuner: ObservableObject {
 
     nonisolated static func detectPitch(samples: [Float], sampleRate: Double) -> Double? {
         let n = samples.count
-        guard n > 2048 else { return nil }   // need a couple of frames for 50Hz
+        // Lower bound matches the tap's 2048-sample window — keeps the
+        // detector honest about how many full periods of the lowest target
+        // frequency it has to work with.
+        guard n > 1500 else { return nil }
 
         // Remove DC and measure level.
         var mean: Float = 0

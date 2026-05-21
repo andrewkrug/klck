@@ -45,6 +45,11 @@ struct EngineParams {
     var quietPlayBars: Int = 4
     var quietMuteBars: Int = 4
 
+    /// When true, the click pattern is shifted by half a beat so audible
+    /// hits land on the "and" of each beat instead of on the beat itself.
+    /// Beat lights move with the audio so visual + audio stay in sync.
+    var clickOnOffbeats: Bool = false
+
     /// Whether the metronome click is scheduled (engine may run for the tone
     /// generator while this is false).
     var metronomeOn: Bool = false
@@ -186,10 +191,10 @@ final class AudioEngine {
     }
 
     /// Restarts the beat scheduler from bar 1 on the next render block.
-    private func resetScheduler(at clock: Double, layerCount: Int) {
+    private func resetScheduler(at clock: Double, layerCount: Int, offset: Double = 0) {
         mainBeatCounter = 0
-        nextMainFrame = clock
-        nextLayerFrame = [Double](repeating: clock, count: layerCount)
+        nextMainFrame = clock + offset
+        nextLayerFrame = [Double](repeating: clock + offset, count: layerCount)
         layerPulseCounter = [Int](repeating: 0, count: layerCount)
         for i in voices.indices { voices[i].active = false }
         publishMeasure(0)
@@ -235,9 +240,12 @@ final class AudioEngine {
         let beatWF = p.beatWaveform.rawValue
 
         // Lock-free transport (re)start: model bumps the epoch, we reset here.
+        // In off-beat mode the first beat fires half a period later so the
+        // entire click pattern lands on the "and" of each beat.
         if p.transportEpoch != lastEpoch {
             lastEpoch = p.transportEpoch
-            resetScheduler(at: Double(sampleClock), layerCount: p.layers.count)
+            let offset = p.clickOnOffbeats ? framesPerBeat / 2 : 0
+            resetScheduler(at: Double(sampleClock), layerCount: p.layers.count, offset: offset)
         }
 
         // Keep scheduler arrays consistent with the current layer count.

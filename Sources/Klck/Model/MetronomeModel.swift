@@ -34,6 +34,15 @@ final class MetronomeModel: ObservableObject {
     @Published var swing: Double = 0 { didSet { push() } }
     @Published var accentSound: ClickWaveform = .sine { didSet { push() } }
     @Published var beatSound: ClickWaveform = .sine { didSet { push() } }
+    /// When true, the metronome clicks on the "and" between each beat
+    /// instead of on the beat itself — a common practice technique. Toggling
+    /// while playing restarts the bar so the offset takes effect immediately.
+    @Published var clickOnOffbeats: Bool = false {
+        didSet {
+            if isRunning { transportEpoch += 1 }
+            push()
+        }
+    }
 
     @Published var quietEnabled: Bool = false { didSet { push() } }
     @Published var quietPlayBars: Int = 4 { didSet { push() } }
@@ -450,32 +459,35 @@ final class MetronomeModel: ObservableObject {
     // MARK: Engine sync
 
     private func push() {
-        let snapshot = EngineParams(
-            bpm: bpm,
-            beatsPerCycle: beatsPerCycle,
-            accents: accents,
-            layers: layers.map {
-                LayerSnapshot(
-                    enabled: $0.enabled,
-                    pulsesPerBeat: $0.pulsesPerBeat,
-                    volume: Float($0.volume),
-                    frequency: Float($0.frequency),
-                    waveform: $0.waveform
-                )
-            },
-            masterVolume: Float(masterVolume),
-            swing: Float(swing),
-            accentWaveform: accentSound,
-            beatWaveform: beatSound,
-            quietEnabled: quietEnabled,
-            quietPlayBars: quietPlayBars,
-            quietMuteBars: quietMuteBars,
-            metronomeOn: isRunning,
-            transportEpoch: transportEpoch,
-            toneEnabled: toneEnabled,
-            toneFrequency: Float(toneFrequency),
-            toneVolume: Float(toneVolume)
-        )
+        // Build the snapshot via piecewise assignment — a single 20+ argument
+        // initializer call sometimes pushes Swift's type checker past its
+        // expression-complexity budget on a debug build.
+        var snapshot = EngineParams()
+        snapshot.bpm = bpm
+        snapshot.beatsPerCycle = beatsPerCycle
+        snapshot.accents = accents
+        snapshot.layers = layers.map { layer in
+            LayerSnapshot(
+                enabled: layer.enabled,
+                pulsesPerBeat: layer.pulsesPerBeat,
+                volume: Float(layer.volume),
+                frequency: Float(layer.frequency),
+                waveform: layer.waveform
+            )
+        }
+        snapshot.masterVolume = Float(masterVolume)
+        snapshot.swing = Float(swing)
+        snapshot.accentWaveform = accentSound
+        snapshot.beatWaveform = beatSound
+        snapshot.quietEnabled = quietEnabled
+        snapshot.quietPlayBars = quietPlayBars
+        snapshot.quietMuteBars = quietMuteBars
+        snapshot.clickOnOffbeats = clickOnOffbeats
+        snapshot.metronomeOn = isRunning
+        snapshot.transportEpoch = transportEpoch
+        snapshot.toneEnabled = toneEnabled
+        snapshot.toneFrequency = Float(toneFrequency)
+        snapshot.toneVolume = Float(toneVolume)
         engine.update(snapshot)
     }
 }
