@@ -24,8 +24,24 @@ final class MetronomeModel: ObservableObject {
     // MARK: Core state
 
     @Published var bpm: Double = 120 { didSet { push() } }
-    @Published var beatsPerCycle: Int = 4 { didSet { syncAccents(); push() } }
+    @Published var beatsPerCycle: Int = 4 {
+        didSet {
+            syncAccents()
+            resizeSubdivisionGrid()
+            push()
+        }
+    }
     @Published var accents: [Int] = [2, 1, 1, 1] { didSet { push() } }
+    /// Step-sequencer grid over the bar: 4 cells per beat (the 16th-note
+    /// positions). Position 0 of each beat is driven by the existing
+    /// `accents` array, so this grid only matters at positions 1, 2, 3.
+    /// Re-sized to match `beatsPerCycle * 4` whenever the meter changes.
+    @Published var subdivisionGrid: [Bool] = Array(repeating: false, count: 16) {
+        didSet { push() }
+    }
+    /// Legacy multi-layer subdivision mixer. Still part of the model so old
+    /// presets continue to decode, but the UI no longer surfaces it; the
+    /// audio engine ignores it in favor of `subdivisionGrid`.
     @Published var layers: [SubLayer] = SubLayer.defaults { didSet { push() } }
     @Published var masterVolume: Double = 0.9 { didSet { push() } }
 
@@ -270,6 +286,22 @@ final class MetronomeModel: ObservableObject {
         if accents.first == 0 { accents[0] = 2 }
     }
 
+    /// Match the grid to the current meter. Preserve existing values when
+    /// growing (new beats get all-off), truncate when shrinking.
+    private func resizeSubdivisionGrid() {
+        let target = beatsPerCycle * 4
+        if subdivisionGrid.count < target {
+            subdivisionGrid.append(contentsOf: Array(repeating: false, count: target - subdivisionGrid.count))
+        } else if subdivisionGrid.count > target {
+            subdivisionGrid = Array(subdivisionGrid.prefix(target))
+        }
+    }
+
+    func toggleSubdivisionCell(_ index: Int) {
+        guard subdivisionGrid.indices.contains(index) else { return }
+        subdivisionGrid[index].toggle()
+    }
+
     // MARK: Presets
 
     func savePreset(named name: String) {
@@ -483,6 +515,7 @@ final class MetronomeModel: ObservableObject {
         snapshot.quietPlayBars = quietPlayBars
         snapshot.quietMuteBars = quietMuteBars
         snapshot.clickOnOffbeats = clickOnOffbeats
+        snapshot.subdivisionGrid = subdivisionGrid
         snapshot.metronomeOn = isRunning
         snapshot.transportEpoch = transportEpoch
         snapshot.toneEnabled = toneEnabled

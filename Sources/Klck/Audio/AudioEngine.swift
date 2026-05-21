@@ -50,6 +50,12 @@ struct EngineParams {
     /// Beat lights move with the audio so visual + audio stay in sync.
     var clickOnOffbeats: Bool = false
 
+    /// 4 cells per beat for `beatsPerCycle` beats — a 16th-note step grid.
+    /// Cell index 0 of every beat is silent here (the main beat handles it
+    /// via `accents`); indices 1, 2, 3 are the "e", "and", and "a"
+    /// subdivisions. A `true` cell fires a soft click at that sub-position.
+    var subdivisionGrid: [Bool] = []
+
     /// Whether the metronome click is scheduled (engine may run for the tone
     /// generator while this is false).
     var metronomeOn: Bool = false
@@ -97,8 +103,10 @@ final class AudioEngine {
     private var sampleClock: Int64 = 0
     private var mainBeatCounter: Int = 0
     private var nextMainFrame: Double = 0
-    private var nextLayerFrame: [Double] = []
-    private var layerPulseCounter: [Int] = []
+    private var nextLayerFrame: [Double] = []   // legacy; kept for state reset
+    private var layerPulseCounter: [Int] = []   // legacy; kept for state reset
+    private var nextSubFrame: Double = 0
+    private var subdivisionCounter: Int = 0
     private var voices = [Voice](repeating: Voice(), count: 24)
     private var rng: UInt32 = 0x9E3779B9
     private var lastEpoch: Int = -1
@@ -196,6 +204,8 @@ final class AudioEngine {
         nextMainFrame = clock + offset
         nextLayerFrame = [Double](repeating: clock + offset, count: layerCount)
         layerPulseCounter = [Int](repeating: 0, count: layerCount)
+        nextSubFrame = clock + offset
+        subdivisionCounter = 0
         for i in voices.indices { voices[i].active = false }
         publishMeasure(0)
     }
@@ -278,30 +288,37 @@ final class AudioEngine {
                 nextMainFrame += framesPerBeat
             }
 
-            // --- Subdivision layers (with swing on even subdivisions) ---
-            for li in p.layers.indices {
-                let layer = p.layers[li]
-                let pulses = max(layer.pulsesPerBeat, 1)
-                let basePulse = framesPerBeat / Double(pulses)
-                if p.metronomeOn && now >= nextLayerFrame[li] {
-                    if !muted && layer.enabled && layer.volume > 0.0001 {
-                        trigger(
-                            frequency: layer.frequency,
-                            amplitude: layer.volume * 0.5,
-                            lengthSec: 0.030,
-                            waveform: layer.waveform.rawValue
-                        )
-                    }
-                    // Swing: lengthen the on-pulse, shorten the off-pulse.
-                    // Only meaningful for even subdivisions (8th/16th).
-                    let parity = layerPulseCounter[li] % 2
-                    let swingAmt = (pulses % 2 == 0) ? Double(p.swing) : 0
-                    let interval = parity == 0
-                        ? basePulse * (1.0 + swingAmt)
-                        : basePulse * (1.0 - swingAmt)
-                    layerPulseCounter[li] += 1
-                    nextLayerFrame[li] += interval
+            // --- Subdivision step grid (4 cells per beat, 16th-note grid) ---
+            // Position 0 of each beat is silent here; the main beat above
+            // owns that slot. Positions 1/2/3 fire iff the corresponding
+            // grid cell is enabled. Swing slows the offbeat (position 2)
+            // and quickens the e/a (positions 1/3) by the same proportion
+            // as the main beat-pair would, keeping the existing swing feel.
+            let subFrames = framesPerBeat / 4.0
+            if p.metronomeOn && now >= nextSubFrame {
+                let subBeat = (subdivisionCounter / 4) % beatsPerCycle
+                let subPos = subdivisionCounter % 4
+                let gridIdx = subBeat * 4 + subPos
+                if subPos != 0,
+                   gridIdx < p.subdivisionGrid.count,
+                   p.subdivisionGrid[gridIdx],
+                   !muted {
+                    // Tone-coded by cell type: "and" (pos 2) at 1.3 kHz,
+                    // "e"/"a" sixteenths at 1.6 kHz, both quieter than the
+                    // main beat so they sit under it musically.
+                    let freq: Float = subPos == 2 ? 1_300 : 1_600
+                    let amp: Float = subPos == 2 ? 0.45 : 0.35
+                    trigger(frequency: freq, amplitude: amp, lengthSec: 0.025, waveform: beatWF)
                 }
+                // Subdivision-aware swing: same model as the layer code we
+                // replaced — odd/even-pair shaping of the inter-cell time.
+                let parity = subdivisionCounter % 2
+                let swingAmt = Double(p.swing)
+                let interval = parity == 0
+                    ? subFrames * (1.0 + swingAmt)
+                    : subFrames * (1.0 - swingAmt)
+                subdivisionCounter += 1
+                nextSubFrame += interval
             }
 
             // --- Mix active voices ---
