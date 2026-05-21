@@ -14,6 +14,11 @@ let package = Package(
         .executableTarget(
             name: "Klck",
             path: "Sources/Klck"
+        ),
+        .testTarget(
+            name: "KlckLayoutTests",
+            dependencies: ["Klck"],
+            path: "Tests/KlckLayoutTests"
         )
     ]
 )

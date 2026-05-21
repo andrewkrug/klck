@@ -14,26 +14,26 @@ struct ContentView: View {
         ZStack {
             DB66.chassis.ignoresSafeArea()
 
-            ScrollView {
-                VStack(spacing: isCompact ? 12 : 18) {
-                    brandBar
+            GeometryReader { proxy in
+                // 2-column whenever there's room: iPad Pro portrait, every
+                // iPad in landscape. iPad mini portrait + iPhone fall back
+                // to single column.
+                let twoCol = hSize == .regular && proxy.size.width >= 900
+                let singleColumnMax: CGFloat = isCompact ? .infinity : 720
 
-                    VStack(spacing: isCompact ? 10 : 14) {
-                        BeatLightsView()
-                        LCDView()
-                        TransportDeckView(showMemory: $showMemory, showSave: $showSave)
+                ScrollView {
+                    Group {
+                        if twoCol {
+                            twoColumnLayout(width: proxy.size.width)
+                        } else {
+                            singleColumnLayout
+                                .frame(maxWidth: singleColumnMax)
+                        }
                     }
-                    .devicePanel()
-
-                    BeatGridView().devicePanel()
-                    SubdivisionMixerView().devicePanel()
-                    PracticePanelView().devicePanel()
-                    TunerToneView().devicePanel()
+                    .padding(.horizontal, isCompact ? 22 : 24)
+                    .padding(.vertical, isCompact ? 16 : 24)
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal, isCompact ? 22 : 20)
-                .padding(.vertical, isCompact ? 16 : 20)
-                .frame(maxWidth: 620)
-                .frame(maxWidth: .infinity)
             }
 
             // Beat flash: bright accent on the downbeat, soft amber otherwise.
@@ -65,6 +65,59 @@ struct ContentView: View {
         } message: {
             Text("Stores tempo, meter, accents, subdivisions, swing, and sound.")
         }
+    }
+
+    /// Single column — iPhone, iPad mini portrait, narrow iPad split-view.
+    private var singleColumnLayout: some View {
+        VStack(spacing: isCompact ? 12 : 18) {
+            brandBar
+
+            VStack(spacing: isCompact ? 10 : 14) {
+                BeatLightsView()
+                LCDView()
+                TransportDeckView(showMemory: $showMemory, showSave: $showSave)
+            }
+            .devicePanel()
+
+            BeatGridView().devicePanel()
+            SubdivisionMixerView().devicePanel()
+            PracticePanelView().devicePanel()
+            TunerToneView().devicePanel()
+        }
+    }
+
+    /// Two columns — iPad Pro portrait + every iPad in landscape. Left side
+    /// is "performance" (what you watch while playing); right side is
+    /// "configuration" (what you set up beforehand). Spacing is intentionally
+    /// tighter than the single-column layout so landscape iPad fits more of
+    /// the right column on screen without scrolling.
+    private func twoColumnLayout(width: CGFloat) -> some View {
+        VStack(spacing: 14) {
+            brandBar
+
+            HStack(alignment: .top, spacing: 14) {
+                VStack(spacing: 14) {
+                    VStack(spacing: 12) {
+                        BeatLightsView()
+                        LCDView()
+                        TransportDeckView(showMemory: $showMemory, showSave: $showSave)
+                    }
+                    .devicePanel()
+
+                    BeatGridView().devicePanel()
+                }
+
+                VStack(spacing: 14) {
+                    SubdivisionMixerView().devicePanel()
+                    PracticePanelView().devicePanel()
+                    TunerToneView().devicePanel()
+                }
+            }
+        }
+        // Leave a margin of chassis on either side of the content even on
+        // very wide displays — beyond ~1280pt of content the layout would
+        // start to feel sparse.
+        .frame(maxWidth: min(width - 32, 1280))
     }
 
     private var brandBar: some View {

@@ -73,7 +73,7 @@ struct SubdivisionMixerView: View {
                 Text("\(Int(layer.wrappedValue.volume * 100))%")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
-                    .frame(width: 36, alignment: .trailing)
+                    .frame(width: 44, alignment: .trailing)
             }
 
             HStack(spacing: 10) {

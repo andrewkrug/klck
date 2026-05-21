@@ -66,13 +66,18 @@ final class Tuner: ObservableObject {
         #endif
 
         let input = engine.inputNode
-        let format = input.outputFormat(forBus: 0)
-        let sampleRate = format.sampleRate
-        guard sampleRate > 0 else { return }
 
-        input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
+        // Install the tap with a nil format — AVAudioEngine resolves the
+        // input bus's format at `engine.start()` time. On iPad the input
+        // route can take a few hundred ms to finish reconfiguring after a
+        // session-category change, so reading `outputFormat(forBus:)` here
+        // sometimes returns `sampleRate == 0` and silently aborts capture.
+        // Reading the rate from each delivered buffer side-steps that race.
+        input.installTap(onBus: 0, bufferSize: 4096, format: nil) { [weak self] buffer, _ in
             guard let self,
                   let channel = buffer.floatChannelData?[0] else { return }
+            let sampleRate = buffer.format.sampleRate
+            guard sampleRate > 0 else { return }
             let count = Int(buffer.frameLength)
             let samples = Array(UnsafeBufferPointer(start: channel, count: count))
             self.analysisQueue.async {
@@ -86,6 +91,7 @@ final class Tuner: ObservableObject {
             isListening = true
         } catch {
             NSLog("Klck: tuner failed to start: \(error)")
+            input.removeTap(onBus: 0)
         }
     }
 
