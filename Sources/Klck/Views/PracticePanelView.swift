@@ -20,14 +20,6 @@ struct PracticePanelView: View {
                     .frame(maxWidth: isCompact ? .infinity : 320)
             }
 
-            // Common practice technique: hear the click on the "and" between
-            // each beat instead of on the beat itself. Toggling restarts the
-            // bar so the offset takes effect immediately even while running.
-            Toggle("Click on the off-beats (the \"and\" of each beat)",
-                   isOn: $model.clickOnOffbeats)
-                .toggleStyle(.switch)
-                .font(.subheadline)
-
             // Two pickers per row on iPad/macOS; one per row on iPhone.
             adaptiveRow(spacing: isCompact ? 12 : 24) {
                 soundPicker("Accent sound", selection: $model.accentSound)

@@ -1,19 +1,32 @@
 import SwiftUI
 
-/// Step-sequencer style subdivision grid. Each beat in the measure becomes
-/// a row of four cells — the four 16th-note positions. The first cell of
-/// every beat shows the beat number (it's driven by the BEATS PER MEASURE
-/// accent grid, not by this view), and the other three cells are toggleable
-/// "e" / "and" / "a" subdivisions.
+/// Step-sequencer subdivision panel.
 ///
-/// Filename retained as SubdivisionMixerView for git history; the type is
-/// renamed via a typealias so the existing call sites in `ContentView`
-/// don't have to change.
+/// Per beat there are two independent step rows:
+/// - **16th row** — 4 cells (the e / & / a positions). Cell 0 is the
+///   downbeat itself (read-only; driven by the BEATS PER MEASURE accents).
+/// - **Triplet row** — 3 cells (the eighth-note-triplet positions). Cell 0
+///   is again the downbeat; cells 1 and 2 are the triplet "&"s.
+///
+/// Glyphs come from the Musical Symbols block (U+1D15F–U+1D161) — the
+/// flag-count difference (none / one / two) reads clearly at 20-24pt where
+/// the BMP "♩ ♪ ♬" trio looks almost identical.
+///
+/// Quick-set buttons let users skip the per-cell tap loop for the four most
+/// common practice patterns: every 8th, every 16th, every triplet, or clear.
 struct SubdivisionGridView: View {
     @EnvironmentObject private var model: MetronomeModel
     @Environment(\.horizontalSizeClass) private var hSize
 
     private var isCompact: Bool { hSize == .compact }
+
+    // Cell labels use the universal musician's count for each subdivision
+    // position — clearer than music-notation glyphs at cell size (and side-
+    // steps the SMP music-glyph rendering problem on iOS system fonts).
+    // 16ths: beat-number, "e", "&", "a".
+    // Triplets: beat-number, "trip", "let".
+    private static let sixteenthLabels = ["", "e", "&", "a"]
+    private static let tripletLabels   = ["", "trip", "let"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -23,22 +36,17 @@ struct SubdivisionGridView: View {
                     .foregroundStyle(DB66.engrave)
                     .tracking(1.5)
                 Spacer()
-                if model.subdivisionGrid.contains(true) {
-                    Button("CLEAR") {
-                        model.subdivisionGrid = Array(repeating: false,
-                                                       count: model.subdivisionGrid.count)
-                    }
-                    .buttonStyle(DeviceButtonStyle())
-                }
             }
 
-            VStack(spacing: isCompact ? 6 : 8) {
+            quickSetBar
+
+            VStack(spacing: isCompact ? 10 : 12) {
                 ForEach(0..<model.beatsPerCycle, id: \.self) { beat in
-                    beatRow(beatIndex: beat)
+                    beatBlock(beatIndex: beat)
                 }
             }
 
-            Text("Tap a cell to add the 16th- or 8th-note subdivision. The first cell of each beat is driven by the BEATS PER MEASURE row above.")
+            Text("Tap cells to add a click at that subdivision. The downbeat is driven by BEATS PER MEASURE above.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -46,96 +54,129 @@ struct SubdivisionGridView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: One beat = 4 cells
+    // MARK: Quick-set bar
 
-    private func beatRow(beatIndex: Int) -> some View {
-        HStack(spacing: isCompact ? 6 : 10) {
+    private var quickSetBar: some View {
+        HStack(spacing: 8) {
+            Button("8ths")     { model.subdivisionApplyAllEighths() }
+                .buttonStyle(DeviceButtonStyle())
+            Button("16ths")    { model.subdivisionApplyAllSixteenths() }
+                .buttonStyle(DeviceButtonStyle())
+            Button("Triplets") { model.subdivisionApplyAllTriplets() }
+                .buttonStyle(DeviceButtonStyle())
+            Spacer()
+            if hasAnyCellOn {
+                Button("CLEAR") { model.subdivisionClearAll() }
+                    .buttonStyle(DeviceButtonStyle())
+            }
+        }
+    }
+
+    private var hasAnyCellOn: Bool {
+        model.subdivisionGrid.contains(true) || model.tripletGrid.contains(true)
+    }
+
+    // MARK: A single beat = label + two step rows
+
+    private func beatBlock(beatIndex: Int) -> some View {
+        HStack(alignment: .center, spacing: isCompact ? 8 : 10) {
             beatLabel(beatIndex: beatIndex)
-            ForEach(0..<4, id: \.self) { sub in
-                cell(beatIndex: beatIndex, subIndex: sub)
+            VStack(spacing: 4) {
+                stepRow(beatIndex: beatIndex,
+                        labels: Self.sixteenthLabels,
+                        isActive: { gridIdx in model.subdivisionGrid[safe: gridIdx] ?? false },
+                        onTap: { gridIdx in model.toggleSubdivisionCell(gridIdx) },
+                        gridBase: beatIndex * 4)
+                stepRow(beatIndex: beatIndex,
+                        labels: Self.tripletLabels,
+                        isActive: { gridIdx in model.tripletGrid[safe: gridIdx] ?? false },
+                        onTap: { gridIdx in model.toggleTripletCell(gridIdx) },
+                        gridBase: beatIndex * 3)
             }
         }
     }
 
     private func beatLabel(beatIndex: Int) -> some View {
         Text("\(beatIndex + 1)")
-            .font(.system(size: isCompact ? 12 : 13, weight: .heavy, design: .rounded))
+            .font(.system(size: isCompact ? 14 : 16, weight: .heavy, design: .rounded))
             .foregroundStyle(DB66.engrave)
-            .frame(width: isCompact ? 18 : 24, alignment: .trailing)
+            .frame(width: isCompact ? 20 : 24, alignment: .trailing)
+    }
+
+    // MARK: One step row (variable cell count)
+
+    private func stepRow(beatIndex: Int,
+                         labels: [String],
+                         isActive: @escaping (Int) -> Bool,
+                         onTap: @escaping (Int) -> Void,
+                         gridBase: Int) -> some View {
+        HStack(spacing: isCompact ? 6 : 8) {
+            ForEach(0..<labels.count, id: \.self) { sub in
+                cell(sub: sub,
+                     beatIndex: beatIndex,
+                     gridIndex: gridBase + sub,
+                     label: labels[sub],
+                     active: isActive(gridBase + sub),
+                     onTap: onTap)
+            }
+        }
     }
 
     @ViewBuilder
-    private func cell(beatIndex: Int, subIndex: Int) -> some View {
-        let gridIndex = beatIndex * 4 + subIndex
-        let isQuarter = subIndex == 0
-        let active = model.subdivisionGrid.indices.contains(gridIndex)
-            ? model.subdivisionGrid[gridIndex]
-            : false
-
-        // Quarter cell is read-only: it just shows which beat owns the row,
-        // mirroring the accent the user set in BEATS PER MEASURE.
-        if isQuarter {
-            cellShape(active: true, isQuarter: true)
-                .overlay(
-                    Text(noteIcon(for: subIndex))
-                        .font(.system(size: isCompact ? 20 : 24, weight: .black))
-                        .foregroundStyle(DB66.engrave)
-                )
-                .opacity(0.55)
+    private func cell(sub: Int,
+                      beatIndex: Int,
+                      gridIndex: Int,
+                      label: String,
+                      active: Bool,
+                      onTap: @escaping (Int) -> Void) -> some View {
+        let isDownbeat = sub == 0
+        // Downbeat cell shows the beat number (matches the BEATS PER MEASURE
+        // row), read-only — that beat's click is driven by `accents`.
+        let displayText = isDownbeat ? "\(beatIndex + 1)" : label
+        if isDownbeat {
+            cellShape(active: true)
+                .overlay(noteLabel(text: displayText, isBeat: true, active: true))
+                .opacity(0.5)
         } else {
-            Button {
-                model.toggleSubdivisionCell(gridIndex)
-            } label: {
-                cellShape(active: active, isQuarter: false)
-                    .overlay(
-                        Text(noteIcon(for: subIndex))
-                            .font(.system(size: isCompact ? 20 : 24, weight: .black))
-                            .foregroundStyle(active ? .white : DB66.engrave)
-                    )
+            Button { onTap(gridIndex) } label: {
+                cellShape(active: active)
+                    .overlay(noteLabel(text: displayText, isBeat: false, active: active))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(accessibilityLabel(beatIndex: beatIndex, subIndex: subIndex, active: active))
+            .accessibilityLabel("Beat \(beatIndex + 1) \(label), \(active ? "on" : "off")")
         }
     }
 
-    private func cellShape(active: Bool, isQuarter: Bool) -> some View {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(active ? Color.accentColor : DB66.btnTop.opacity(0.5))
+    private func cellShape(active: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .fill(active ? Color.accentColor : DB66.btnTop.opacity(0.45))
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(active ? Color.accentColor.opacity(0.9)
-                                          : DB66.panelEdge.opacity(0.9),
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(active ? Color.accentColor.opacity(0.9) : DB66.panelEdge,
                                   lineWidth: 1)
             )
             .frame(maxWidth: .infinity)
-            .frame(height: isCompact ? 40 : 46)
+            .frame(height: isCompact ? 30 : 34)
     }
 
-    /// Note-value icon for the cell at this sub-position.
-    /// - 0 → quarter (♩)
-    /// - 2 → eighth offbeat (♪, the "and")
-    /// - 1 or 3 → sixteenth offbeats (♬, the "e" / "a")
-    private func noteIcon(for subIndex: Int) -> String {
-        switch subIndex {
-        case 0: return "♩"
-        case 2: return "♪"
-        default: return "♬"
-        }
-    }
-
-    private func accessibilityLabel(beatIndex: Int, subIndex: Int, active: Bool) -> String {
-        let position: String = {
-            switch subIndex {
-            case 1: return "e of \(beatIndex + 1)"
-            case 2: return "and of \(beatIndex + 1)"
-            case 3: return "a of \(beatIndex + 1)"
-            default: return "beat \(beatIndex + 1)"
-            }
-        }()
-        return "\(position), \(active ? "on" : "off")"
+    private func noteLabel(text: String, isBeat: Bool, active: Bool) -> some View {
+        Text(text)
+            .font(.system(size: isCompact ? 14 : 16,
+                          weight: isBeat ? .heavy : .semibold,
+                          design: .rounded))
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .foregroundStyle(active ? .white : DB66.engrave)
     }
 }
 
-/// Back-compat alias so existing call sites that still say
-/// `SubdivisionMixerView` continue to compile.
+/// Back-compat alias so existing ContentView call sites keep compiling.
 typealias SubdivisionMixerView = SubdivisionGridView
+
+// MARK: Tiny convenience extension for safe indexing
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
+}

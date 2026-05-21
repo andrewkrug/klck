@@ -39,6 +39,13 @@ final class MetronomeModel: ObservableObject {
     @Published var subdivisionGrid: [Bool] = Array(repeating: false, count: 16) {
         didSet { push() }
     }
+    /// Triplet sibling of `subdivisionGrid` — 3 cells per beat (the eighth-
+    /// note triplet positions). Independent from the 16th grid so a user
+    /// can layer 16ths + triplets for polyrhythmic practice. Position 0 of
+    /// each beat is the downbeat (silent here; the main beat owns it).
+    @Published var tripletGrid: [Bool] = Array(repeating: false, count: 12) {
+        didSet { push() }
+    }
     /// Legacy multi-layer subdivision mixer. Still part of the model so old
     /// presets continue to decode, but the UI no longer surfaces it; the
     /// audio engine ignores it in favor of `subdivisionGrid`.
@@ -286,20 +293,66 @@ final class MetronomeModel: ObservableObject {
         if accents.first == 0 { accents[0] = 2 }
     }
 
-    /// Match the grid to the current meter. Preserve existing values when
-    /// growing (new beats get all-off), truncate when shrinking.
+    /// Match both subdivision grids to the current meter. Preserves existing
+    /// values when growing (new beats get all-off), truncates when shrinking.
     private func resizeSubdivisionGrid() {
-        let target = beatsPerCycle * 4
-        if subdivisionGrid.count < target {
-            subdivisionGrid.append(contentsOf: Array(repeating: false, count: target - subdivisionGrid.count))
-        } else if subdivisionGrid.count > target {
-            subdivisionGrid = Array(subdivisionGrid.prefix(target))
+        let target16 = beatsPerCycle * 4
+        if subdivisionGrid.count < target16 {
+            subdivisionGrid.append(contentsOf: Array(repeating: false, count: target16 - subdivisionGrid.count))
+        } else if subdivisionGrid.count > target16 {
+            subdivisionGrid = Array(subdivisionGrid.prefix(target16))
+        }
+        let target3 = beatsPerCycle * 3
+        if tripletGrid.count < target3 {
+            tripletGrid.append(contentsOf: Array(repeating: false, count: target3 - tripletGrid.count))
+        } else if tripletGrid.count > target3 {
+            tripletGrid = Array(tripletGrid.prefix(target3))
         }
     }
 
     func toggleSubdivisionCell(_ index: Int) {
         guard subdivisionGrid.indices.contains(index) else { return }
         subdivisionGrid[index].toggle()
+    }
+
+    func toggleTripletCell(_ index: Int) {
+        guard tripletGrid.indices.contains(index) else { return }
+        tripletGrid[index].toggle()
+    }
+
+    /// One-tap presets for the subdivision grid. "Off-beats" lights up only
+    /// the "and" cell of each beat (position 2 of the 16th grid). "All 16ths"
+    /// fills every off-cell of the 16th row. "All triplets" fills both
+    /// non-downbeat triplet cells. "Clear" wipes everything.
+    func subdivisionApplyAllEighths() {
+        clearAllSubdivisionCells()
+        for beat in 0..<beatsPerCycle {
+            let i = beat * 4 + 2
+            if subdivisionGrid.indices.contains(i) { subdivisionGrid[i] = true }
+        }
+    }
+
+    func subdivisionApplyAllSixteenths() {
+        clearAllSubdivisionCells()
+        for i in subdivisionGrid.indices where (i % 4) != 0 {
+            subdivisionGrid[i] = true
+        }
+    }
+
+    func subdivisionApplyAllTriplets() {
+        clearAllSubdivisionCells()
+        for i in tripletGrid.indices where (i % 3) != 0 {
+            tripletGrid[i] = true
+        }
+    }
+
+    func subdivisionClearAll() {
+        clearAllSubdivisionCells()
+    }
+
+    private func clearAllSubdivisionCells() {
+        subdivisionGrid = Array(repeating: false, count: subdivisionGrid.count)
+        tripletGrid = Array(repeating: false, count: tripletGrid.count)
     }
 
     // MARK: Presets
@@ -516,6 +569,7 @@ final class MetronomeModel: ObservableObject {
         snapshot.quietMuteBars = quietMuteBars
         snapshot.clickOnOffbeats = clickOnOffbeats
         snapshot.subdivisionGrid = subdivisionGrid
+        snapshot.tripletGrid = tripletGrid
         snapshot.metronomeOn = isRunning
         snapshot.transportEpoch = transportEpoch
         snapshot.toneEnabled = toneEnabled

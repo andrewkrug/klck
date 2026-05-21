@@ -55,6 +55,11 @@ struct EngineParams {
     /// via `accents`); indices 1, 2, 3 are the "e", "and", and "a"
     /// subdivisions. A `true` cell fires a soft click at that sub-position.
     var subdivisionGrid: [Bool] = []
+    /// 3 cells per beat — the eighth-note triplet positions. Position 0 is
+    /// the downbeat (handled by the main beat); positions 1 and 2 are the
+    /// triplet eighths. Independent from `subdivisionGrid` so polyrhythms
+    /// are expressible.
+    var tripletGrid: [Bool] = []
 
     /// Whether the metronome click is scheduled (engine may run for the tone
     /// generator while this is false).
@@ -107,6 +112,8 @@ final class AudioEngine {
     private var layerPulseCounter: [Int] = []   // legacy; kept for state reset
     private var nextSubFrame: Double = 0
     private var subdivisionCounter: Int = 0
+    private var nextTripletFrame: Double = 0
+    private var tripletCounter: Int = 0
     private var voices = [Voice](repeating: Voice(), count: 24)
     private var rng: UInt32 = 0x9E3779B9
     private var lastEpoch: Int = -1
@@ -206,6 +213,8 @@ final class AudioEngine {
         layerPulseCounter = [Int](repeating: 0, count: layerCount)
         nextSubFrame = clock + offset
         subdivisionCounter = 0
+        nextTripletFrame = clock + offset
+        tripletCounter = 0
         for i in voices.indices { voices[i].active = false }
         publishMeasure(0)
     }
@@ -319,6 +328,27 @@ final class AudioEngine {
                     : subFrames * (1.0 - swingAmt)
                 subdivisionCounter += 1
                 nextSubFrame += interval
+            }
+
+            // --- Triplet grid (3 cells per beat, eighth-note triplets) ---
+            // Independent from the 16th grid so users can stack them for
+            // polyrhythms. Swing isn't applied to triplets — swinging
+            // triplets eats the feel that makes them triplets.
+            let tripFrames = framesPerBeat / 3.0
+            if p.metronomeOn && now >= nextTripletFrame {
+                let tBeat = (tripletCounter / 3) % beatsPerCycle
+                let tPos = tripletCounter % 3
+                let gIdx = tBeat * 3 + tPos
+                if tPos != 0,
+                   gIdx < p.tripletGrid.count,
+                   p.tripletGrid[gIdx],
+                   !muted {
+                    // Distinct tone from the 16th-grid clicks so a player
+                    // hearing both can tell which subdivision is which.
+                    trigger(frequency: 1_500, amplitude: 0.4, lengthSec: 0.025, waveform: beatWF)
+                }
+                tripletCounter += 1
+                nextTripletFrame += tripFrames
             }
 
             // --- Mix active voices ---
