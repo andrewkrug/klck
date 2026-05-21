@@ -30,9 +30,9 @@ struct ContentView: View {
                                 .frame(maxWidth: singleColumnMax)
                         }
                     }
-                    .padding(.horizontal, isCompact ? 22 : 24)
-                    .padding(.vertical, isCompact ? 16 : 24)
-                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, isCompact ? 18 : 24)
+                    .padding(.vertical, isCompact ? 14 : 24)
+                    .frame(maxWidth: .infinity, alignment: .center)
                 }
             }
 
@@ -138,11 +138,11 @@ struct ContentView: View {
                 .frame(width: 10, height: 10)
                 .shadow(color: model.isRunning ? DB66.ledAccent : .clear, radius: 5)
         }
-        // Extra breathing room on iPhone so "Klck" + LED clear rounded
-        // corners and the dynamic-island area on Pro models. The LED has a
-        // 5pt shadow halo, so it needs noticeably more right-side margin.
-        .padding(.leading, isCompact ? 8 : 4)
-        .padding(.trailing, isCompact ? 14 : 4)
+        // Symmetric horizontal padding so the brand bar's right edge lines
+        // up visually with the panels below (asymmetric padding made the
+        // app feel right-shifted on iPhone). Top inset gives the dynamic
+        // island clearance on Pro models.
+        .padding(.horizontal, isCompact ? 10 : 4)
         .padding(.top, isCompact ? 6 : 0)
     }
 }

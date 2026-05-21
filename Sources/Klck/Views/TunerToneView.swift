@@ -29,7 +29,7 @@ struct TunerToneView: View {
                     .frame(minWidth: 110)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(tuner.hasSignal ? String(format: "%.1f Hz", tuner.frequency) : "listening…")
+                    Text(tunerStatusText)
                         .font(DB66.lcdFont(14))
                         .foregroundStyle(DB66.lcdInk)
                     Text(tuner.hasSignal ? String(format: "%+.0f cents", tuner.cents) : " ")
@@ -74,6 +74,17 @@ struct TunerToneView: View {
     }
 
     private var inTune: Bool { tuner.hasSignal && abs(tuner.cents) < 5 }
+
+    /// Three states: actively reading pitch, listening for one, or idle.
+    private var tunerStatusText: String {
+        if tuner.hasSignal {
+            return String(format: "%.1f Hz", tuner.frequency)
+        } else if tuner.isListening {
+            return "listening…"
+        } else {
+            return "tap LISTEN to tune"
+        }
+    }
 
     /// Strobe-tuner style needle gauge. The needle pivots from the bottom of
     /// the gauge: vertical = perfectly in tune, swung left = flat, right =
