@@ -25,6 +25,10 @@ struct PracticePanelView: View {
                 soundPicker("Accent sound", selection: $model.accentSound)
                 soundPicker("Beat sound", selection: $model.beatSound)
             }
+            adaptiveRow(spacing: isCompact ? 12 : 24) {
+                soundPicker("16th-row sound", selection: $model.subdivisionSound)
+                soundPicker("Triplet-row sound", selection: $model.tripletSound)
+            }
 
             Toggle("Flash screen on the beat (brighter on the downbeat)",
                    isOn: $model.flashEnabled)

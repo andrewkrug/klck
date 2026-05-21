@@ -60,6 +60,11 @@ struct EngineParams {
     /// triplet eighths. Independent from `subdivisionGrid` so polyrhythms
     /// are expressible.
     var tripletGrid: [Bool] = []
+    /// Waveforms used by the two subdivision rows. Distinct from
+    /// `beatWaveform` so a player can tell the rows apart by timbre even
+    /// when both are firing.
+    var subdivisionWaveform: ClickWaveform = .triangle
+    var tripletWaveform: ClickWaveform = .triangle
 
     /// Whether the metronome click is scheduled (engine may run for the tone
     /// generator while this is false).
@@ -317,7 +322,8 @@ final class AudioEngine {
                     // main beat so they sit under it musically.
                     let freq: Float = subPos == 2 ? 1_300 : 1_600
                     let amp: Float = subPos == 2 ? 0.45 : 0.35
-                    trigger(frequency: freq, amplitude: amp, lengthSec: 0.025, waveform: beatWF)
+                    trigger(frequency: freq, amplitude: amp, lengthSec: 0.025,
+                            waveform: p.subdivisionWaveform.rawValue)
                 }
                 // Subdivision-aware swing: same model as the layer code we
                 // replaced — odd/even-pair shaping of the inter-cell time.
@@ -345,7 +351,8 @@ final class AudioEngine {
                    !muted {
                     // Distinct tone from the 16th-grid clicks so a player
                     // hearing both can tell which subdivision is which.
-                    trigger(frequency: 1_500, amplitude: 0.4, lengthSec: 0.025, waveform: beatWF)
+                    trigger(frequency: 1_500, amplitude: 0.4, lengthSec: 0.025,
+                            waveform: p.tripletWaveform.rawValue)
                 }
                 tripletCounter += 1
                 nextTripletFrame += tripFrames

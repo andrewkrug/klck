@@ -57,6 +57,10 @@ final class MetronomeModel: ObservableObject {
     @Published var swing: Double = 0 { didSet { push() } }
     @Published var accentSound: ClickWaveform = .sine { didSet { push() } }
     @Published var beatSound: ClickWaveform = .sine { didSet { push() } }
+    /// Waveform used for cells in the 16th-note subdivision grid row.
+    @Published var subdivisionSound: ClickWaveform = .triangle { didSet { push() } }
+    /// Waveform used for cells in the triplet subdivision grid row.
+    @Published var tripletSound: ClickWaveform = .triangle { didSet { push() } }
     /// When true, the metronome clicks on the "and" between each beat
     /// instead of on the beat itself — a common practice technique. Toggling
     /// while playing restarts the bar so the offset takes effect immediately.
@@ -570,6 +574,8 @@ final class MetronomeModel: ObservableObject {
         snapshot.clickOnOffbeats = clickOnOffbeats
         snapshot.subdivisionGrid = subdivisionGrid
         snapshot.tripletGrid = tripletGrid
+        snapshot.subdivisionWaveform = subdivisionSound
+        snapshot.tripletWaveform = tripletSound
         snapshot.metronomeOn = isRunning
         snapshot.transportEpoch = transportEpoch
         snapshot.toneEnabled = toneEnabled
