@@ -65,6 +65,12 @@ struct EngineParams {
     /// when both are firing.
     var subdivisionWaveform: ClickWaveform = .triangle
     var tripletWaveform: ClickWaveform = .triangle
+    /// Per-row mix levels. Multiplied into the cell's intrinsic amplitude
+    /// at trigger time — 0 mutes the row entirely; 1 leaves it at the
+    /// per-cell default. Lets a player dial subdivisions under the main
+    /// beat without muting the cells outright.
+    var subdivisionLevel: Float = 0.7
+    var tripletLevel: Float = 0.7
 
     /// Whether the metronome click is scheduled (engine may run for the tone
     /// generator while this is false).
@@ -321,9 +327,12 @@ final class AudioEngine {
                     // "e"/"a" sixteenths at 1.6 kHz, both quieter than the
                     // main beat so they sit under it musically.
                     let freq: Float = subPos == 2 ? 1_300 : 1_600
-                    let amp: Float = subPos == 2 ? 0.45 : 0.35
-                    trigger(frequency: freq, amplitude: amp, lengthSec: 0.025,
-                            waveform: p.subdivisionWaveform.rawValue)
+                    let baseAmp: Float = subPos == 2 ? 0.45 : 0.35
+                    let amp = baseAmp * p.subdivisionLevel
+                    if amp > 0.001 {
+                        trigger(frequency: freq, amplitude: amp, lengthSec: 0.025,
+                                waveform: p.subdivisionWaveform.rawValue)
+                    }
                 }
                 // Subdivision-aware swing: same model as the layer code we
                 // replaced — odd/even-pair shaping of the inter-cell time.
@@ -351,8 +360,11 @@ final class AudioEngine {
                    !muted {
                     // Distinct tone from the 16th-grid clicks so a player
                     // hearing both can tell which subdivision is which.
-                    trigger(frequency: 1_500, amplitude: 0.4, lengthSec: 0.025,
-                            waveform: p.tripletWaveform.rawValue)
+                    let amp = 0.4 * p.tripletLevel
+                    if amp > 0.001 {
+                        trigger(frequency: 1_500, amplitude: amp, lengthSec: 0.025,
+                                waveform: p.tripletWaveform.rawValue)
+                    }
                 }
                 tripletCounter += 1
                 nextTripletFrame += tripFrames
