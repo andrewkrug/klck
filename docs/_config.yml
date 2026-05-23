@@ -1,3 +1,13 @@
 title: Klck
-description: A sample-accurate metronome for macOS and iOS.
+description: A sample-accurate metronome for iPhone, iPad, and Mac.
 theme: jekyll-theme-minimal
+show_downloads: false
+
+plugins:
+  - jekyll-seo-tag
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      image: /klck/icon.png
