@@ -3,6 +3,11 @@ description: A sample-accurate metronome for iPhone, iPad, and Mac.
 theme: jekyll-theme-minimal
 show_downloads: false
 
+# Force the canonical HTTPS origin. Without this, jekyll-github-metadata
+# auto-populates http://www.andrewkrug.com (the apex doesn't have HTTPS, only
+# www does), which leaks into the og:image / canonical URLs.
+url: https://www.andrewkrug.com
+
 plugins:
   - jekyll-seo-tag
 
@@ -10,4 +15,7 @@ defaults:
   - scope:
       path: ""
     values:
-      image: /klck/icon.png
+      # Path is relative to the site root (without baseurl). jekyll-seo-tag
+      # prepends site.url + site.baseurl automatically.
+      # 1200x630 is the Facebook / LinkedIn recommended OG image size.
+      image: /social/fb-li-1200x630.png
