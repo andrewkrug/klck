@@ -1,0 +1,89 @@
+---
+---
+
+@import "{{ site.theme }}";
+
+/* Klck site polish — restrained tweaks on top of jekyll-theme-minimal. */
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+               Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  line-height: 1.6;
+  color: #1c1c1e;
+}
+
+.wrapper {
+  max-width: 780px;
+}
+
+h1, h2, h3 {
+  color: #0a0a0a;
+  letter-spacing: -0.01em;
+}
+
+h1 {
+  font-weight: 700;
+  font-size: 2.4rem;
+  margin-top: 0.4em;
+}
+
+h2 {
+  margin-top: 2.5rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+h3 {
+  margin-top: 1.6rem;
+  font-size: 1.15rem;
+  color: #2a2a2a;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid #e6e6e6;
+  margin: 2.4rem 0;
+}
+
+img {
+  border-radius: 6px;
+}
+
+p img {
+  vertical-align: middle;
+}
+
+a {
+  color: #0a7;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s;
+}
+
+a:hover {
+  border-bottom-color: #0a7;
+}
+
+code, pre {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+sub {
+  color: #6b7280;
+  font-size: 0.85em;
+}
+
+ul li {
+  margin-bottom: 0.35rem;
+}
+
+/* Tighten the header block jekyll-theme-minimal adds in the sidebar so the
+ * hero centerpiece in index.md has room to breathe.
+ */
+header {
+  width: 240px;
+}
+
+@media (max-width: 960px) {
+  header { width: auto; }
+}

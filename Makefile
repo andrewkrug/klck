@@ -7,7 +7,7 @@ BIN_DBG  := .build/debug/Klck
 
 .DEFAULT_GOAL := app
 
-.PHONY: help build debug app run run-console release clean rebuild check version ios-project
+.PHONY: help build debug app run run-console release clean rebuild check test version ios-project
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -33,6 +33,9 @@ release: clean app ## Clean, then produce a fresh Klck.app
 
 check: ## Type-check / build without bundling
 	swift build -c debug
+
+test: ## Run the layout smoke test suite
+	swift test
 
 ios-project: ## Generate Klck.xcodeproj for the iOS app (needs Xcode + xcodegen)
 	@command -v xcodegen >/dev/null || { echo "xcodegen not found — run: brew install xcodegen"; exit 1; }

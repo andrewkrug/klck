@@ -25,6 +25,14 @@ struct PracticePanelView: View {
                 soundPicker("Accent sound", selection: $model.accentSound)
                 soundPicker("Beat sound", selection: $model.beatSound)
             }
+            adaptiveRow(spacing: isCompact ? 12 : 24) {
+                soundAndVolume("16th row",
+                               selection: $model.subdivisionSound,
+                               volume: $model.subdivisionVolume)
+                soundAndVolume("Triplet row",
+                               selection: $model.tripletSound,
+                               volume: $model.tripletVolume)
+            }
 
             Toggle("Flash screen on the beat (brighter on the downbeat)",
                    isOn: $model.flashEnabled)
@@ -119,6 +127,38 @@ struct PracticePanelView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .frame(maxWidth: isCompact ? .infinity : 240)
+        }
+    }
+
+    /// Like `soundPicker` but with an inline volume slider beneath the
+    /// waveform picker. Used for the subdivision rows where the player
+    /// usually wants to dial them under the main beat.
+    private func soundAndVolume(_ title: String,
+                                selection: Binding<ClickWaveform>,
+                                volume: Binding<Double>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(title).font(.subheadline)
+                Spacer()
+                Text("\(Int(volume.wrappedValue * 100))%")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Picker(title, selection: selection) {
+                ForEach(ClickWaveform.allCases) { wf in
+                    Text(wf.label).tag(wf)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: isCompact ? .infinity : 240)
+
+            HStack(spacing: 8) {
+                Image(systemName: "speaker.wave.1")
+                    .foregroundStyle(.secondary)
+                Slider(value: volume, in: 0...1)
+                    .frame(maxWidth: isCompact ? .infinity : 240)
+            }
         }
     }
 

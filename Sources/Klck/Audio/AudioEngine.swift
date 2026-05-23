@@ -45,6 +45,33 @@ struct EngineParams {
     var quietPlayBars: Int = 4
     var quietMuteBars: Int = 4
 
+    /// When true, the click pattern is shifted by half a beat so audible
+    /// hits land on the "and" of each beat instead of on the beat itself.
+    /// Beat lights move with the audio so visual + audio stay in sync.
+    var clickOnOffbeats: Bool = false
+
+    /// 4 cells per beat for `beatsPerCycle` beats — a 16th-note step grid.
+    /// Cell index 0 of every beat is silent here (the main beat handles it
+    /// via `accents`); indices 1, 2, 3 are the "e", "and", and "a"
+    /// subdivisions. A `true` cell fires a soft click at that sub-position.
+    var subdivisionGrid: [Bool] = []
+    /// 3 cells per beat — the eighth-note triplet positions. Position 0 is
+    /// the downbeat (handled by the main beat); positions 1 and 2 are the
+    /// triplet eighths. Independent from `subdivisionGrid` so polyrhythms
+    /// are expressible.
+    var tripletGrid: [Bool] = []
+    /// Waveforms used by the two subdivision rows. Distinct from
+    /// `beatWaveform` so a player can tell the rows apart by timbre even
+    /// when both are firing.
+    var subdivisionWaveform: ClickWaveform = .triangle
+    var tripletWaveform: ClickWaveform = .triangle
+    /// Per-row mix levels. Multiplied into the cell's intrinsic amplitude
+    /// at trigger time — 0 mutes the row entirely; 1 leaves it at the
+    /// per-cell default. Lets a player dial subdivisions under the main
+    /// beat without muting the cells outright.
+    var subdivisionLevel: Float = 0.7
+    var tripletLevel: Float = 0.7
+
     /// Whether the metronome click is scheduled (engine may run for the tone
     /// generator while this is false).
     var metronomeOn: Bool = false
@@ -92,8 +119,12 @@ final class AudioEngine {
     private var sampleClock: Int64 = 0
     private var mainBeatCounter: Int = 0
     private var nextMainFrame: Double = 0
-    private var nextLayerFrame: [Double] = []
-    private var layerPulseCounter: [Int] = []
+    private var nextLayerFrame: [Double] = []   // legacy; kept for state reset
+    private var layerPulseCounter: [Int] = []   // legacy; kept for state reset
+    private var nextSubFrame: Double = 0
+    private var subdivisionCounter: Int = 0
+    private var nextTripletFrame: Double = 0
+    private var tripletCounter: Int = 0
     private var voices = [Voice](repeating: Voice(), count: 24)
     private var rng: UInt32 = 0x9E3779B9
     private var lastEpoch: Int = -1
@@ -186,11 +217,15 @@ final class AudioEngine {
     }
 
     /// Restarts the beat scheduler from bar 1 on the next render block.
-    private func resetScheduler(at clock: Double, layerCount: Int) {
+    private func resetScheduler(at clock: Double, layerCount: Int, offset: Double = 0) {
         mainBeatCounter = 0
-        nextMainFrame = clock
-        nextLayerFrame = [Double](repeating: clock, count: layerCount)
+        nextMainFrame = clock + offset
+        nextLayerFrame = [Double](repeating: clock + offset, count: layerCount)
         layerPulseCounter = [Int](repeating: 0, count: layerCount)
+        nextSubFrame = clock + offset
+        subdivisionCounter = 0
+        nextTripletFrame = clock + offset
+        tripletCounter = 0
         for i in voices.indices { voices[i].active = false }
         publishMeasure(0)
     }
@@ -235,9 +270,12 @@ final class AudioEngine {
         let beatWF = p.beatWaveform.rawValue
 
         // Lock-free transport (re)start: model bumps the epoch, we reset here.
+        // In off-beat mode the first beat fires half a period later so the
+        // entire click pattern lands on the "and" of each beat.
         if p.transportEpoch != lastEpoch {
             lastEpoch = p.transportEpoch
-            resetScheduler(at: Double(sampleClock), layerCount: p.layers.count)
+            let offset = p.clickOnOffbeats ? framesPerBeat / 2 : 0
+            resetScheduler(at: Double(sampleClock), layerCount: p.layers.count, offset: offset)
         }
 
         // Keep scheduler arrays consistent with the current layer count.
@@ -270,30 +308,66 @@ final class AudioEngine {
                 nextMainFrame += framesPerBeat
             }
 
-            // --- Subdivision layers (with swing on even subdivisions) ---
-            for li in p.layers.indices {
-                let layer = p.layers[li]
-                let pulses = max(layer.pulsesPerBeat, 1)
-                let basePulse = framesPerBeat / Double(pulses)
-                if p.metronomeOn && now >= nextLayerFrame[li] {
-                    if !muted && layer.enabled && layer.volume > 0.0001 {
-                        trigger(
-                            frequency: layer.frequency,
-                            amplitude: layer.volume * 0.5,
-                            lengthSec: 0.030,
-                            waveform: layer.waveform.rawValue
-                        )
+            // --- Subdivision step grid (4 cells per beat, 16th-note grid) ---
+            // Position 0 of each beat is silent here; the main beat above
+            // owns that slot. Positions 1/2/3 fire iff the corresponding
+            // grid cell is enabled. Swing slows the offbeat (position 2)
+            // and quickens the e/a (positions 1/3) by the same proportion
+            // as the main beat-pair would, keeping the existing swing feel.
+            let subFrames = framesPerBeat / 4.0
+            if p.metronomeOn && now >= nextSubFrame {
+                let subBeat = (subdivisionCounter / 4) % beatsPerCycle
+                let subPos = subdivisionCounter % 4
+                let gridIdx = subBeat * 4 + subPos
+                if subPos != 0,
+                   gridIdx < p.subdivisionGrid.count,
+                   p.subdivisionGrid[gridIdx],
+                   !muted {
+                    // Tone-coded by cell type: "and" (pos 2) at 1.3 kHz,
+                    // "e"/"a" sixteenths at 1.6 kHz, both quieter than the
+                    // main beat so they sit under it musically.
+                    let freq: Float = subPos == 2 ? 1_300 : 1_600
+                    let baseAmp: Float = subPos == 2 ? 0.45 : 0.35
+                    let amp = baseAmp * p.subdivisionLevel
+                    if amp > 0.001 {
+                        trigger(frequency: freq, amplitude: amp, lengthSec: 0.025,
+                                waveform: p.subdivisionWaveform.rawValue)
                     }
-                    // Swing: lengthen the on-pulse, shorten the off-pulse.
-                    // Only meaningful for even subdivisions (8th/16th).
-                    let parity = layerPulseCounter[li] % 2
-                    let swingAmt = (pulses % 2 == 0) ? Double(p.swing) : 0
-                    let interval = parity == 0
-                        ? basePulse * (1.0 + swingAmt)
-                        : basePulse * (1.0 - swingAmt)
-                    layerPulseCounter[li] += 1
-                    nextLayerFrame[li] += interval
                 }
+                // Subdivision-aware swing: same model as the layer code we
+                // replaced — odd/even-pair shaping of the inter-cell time.
+                let parity = subdivisionCounter % 2
+                let swingAmt = Double(p.swing)
+                let interval = parity == 0
+                    ? subFrames * (1.0 + swingAmt)
+                    : subFrames * (1.0 - swingAmt)
+                subdivisionCounter += 1
+                nextSubFrame += interval
+            }
+
+            // --- Triplet grid (3 cells per beat, eighth-note triplets) ---
+            // Independent from the 16th grid so users can stack them for
+            // polyrhythms. Swing isn't applied to triplets — swinging
+            // triplets eats the feel that makes them triplets.
+            let tripFrames = framesPerBeat / 3.0
+            if p.metronomeOn && now >= nextTripletFrame {
+                let tBeat = (tripletCounter / 3) % beatsPerCycle
+                let tPos = tripletCounter % 3
+                let gIdx = tBeat * 3 + tPos
+                if tPos != 0,
+                   gIdx < p.tripletGrid.count,
+                   p.tripletGrid[gIdx],
+                   !muted {
+                    // Distinct tone from the 16th-grid clicks so a player
+                    // hearing both can tell which subdivision is which.
+                    let amp = 0.4 * p.tripletLevel
+                    if amp > 0.001 {
+                        trigger(frequency: 1_500, amplitude: amp, lengthSec: 0.025,
+                                waveform: p.tripletWaveform.rawValue)
+                    }
+                }
+                tripletCounter += 1
+                nextTripletFrame += tripFrames
             }
 
             // --- Mix active voices ---

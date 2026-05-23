@@ -24,8 +24,31 @@ final class MetronomeModel: ObservableObject {
     // MARK: Core state
 
     @Published var bpm: Double = 120 { didSet { push() } }
-    @Published var beatsPerCycle: Int = 4 { didSet { syncAccents(); push() } }
+    @Published var beatsPerCycle: Int = 4 {
+        didSet {
+            syncAccents()
+            resizeSubdivisionGrid()
+            push()
+        }
+    }
     @Published var accents: [Int] = [2, 1, 1, 1] { didSet { push() } }
+    /// Step-sequencer grid over the bar: 4 cells per beat (the 16th-note
+    /// positions). Position 0 of each beat is driven by the existing
+    /// `accents` array, so this grid only matters at positions 1, 2, 3.
+    /// Re-sized to match `beatsPerCycle * 4` whenever the meter changes.
+    @Published var subdivisionGrid: [Bool] = Array(repeating: false, count: 16) {
+        didSet { push() }
+    }
+    /// Triplet sibling of `subdivisionGrid` — 3 cells per beat (the eighth-
+    /// note triplet positions). Independent from the 16th grid so a user
+    /// can layer 16ths + triplets for polyrhythmic practice. Position 0 of
+    /// each beat is the downbeat (silent here; the main beat owns it).
+    @Published var tripletGrid: [Bool] = Array(repeating: false, count: 12) {
+        didSet { push() }
+    }
+    /// Legacy multi-layer subdivision mixer. Still part of the model so old
+    /// presets continue to decode, but the UI no longer surfaces it; the
+    /// audio engine ignores it in favor of `subdivisionGrid`.
     @Published var layers: [SubLayer] = SubLayer.defaults { didSet { push() } }
     @Published var masterVolume: Double = 0.9 { didSet { push() } }
 
@@ -34,6 +57,23 @@ final class MetronomeModel: ObservableObject {
     @Published var swing: Double = 0 { didSet { push() } }
     @Published var accentSound: ClickWaveform = .sine { didSet { push() } }
     @Published var beatSound: ClickWaveform = .sine { didSet { push() } }
+    /// Waveform used for cells in the 16th-note subdivision grid row.
+    @Published var subdivisionSound: ClickWaveform = .triangle { didSet { push() } }
+    /// Waveform used for cells in the triplet subdivision grid row.
+    @Published var tripletSound: ClickWaveform = .triangle { didSet { push() } }
+    /// Mix levels for the two subdivision rows. 0 = silent, 1 = full
+    /// click amplitude (the per-cell amplitude defined in the engine).
+    @Published var subdivisionVolume: Double = 0.7 { didSet { push() } }
+    @Published var tripletVolume: Double = 0.7 { didSet { push() } }
+    /// When true, the metronome clicks on the "and" between each beat
+    /// instead of on the beat itself — a common practice technique. Toggling
+    /// while playing restarts the bar so the offset takes effect immediately.
+    @Published var clickOnOffbeats: Bool = false {
+        didSet {
+            if isRunning { transportEpoch += 1 }
+            push()
+        }
+    }
 
     @Published var quietEnabled: Bool = false { didSet { push() } }
     @Published var quietPlayBars: Int = 4 { didSet { push() } }
@@ -261,6 +301,68 @@ final class MetronomeModel: ObservableObject {
         if accents.first == 0 { accents[0] = 2 }
     }
 
+    /// Match both subdivision grids to the current meter. Preserves existing
+    /// values when growing (new beats get all-off), truncates when shrinking.
+    private func resizeSubdivisionGrid() {
+        let target16 = beatsPerCycle * 4
+        if subdivisionGrid.count < target16 {
+            subdivisionGrid.append(contentsOf: Array(repeating: false, count: target16 - subdivisionGrid.count))
+        } else if subdivisionGrid.count > target16 {
+            subdivisionGrid = Array(subdivisionGrid.prefix(target16))
+        }
+        let target3 = beatsPerCycle * 3
+        if tripletGrid.count < target3 {
+            tripletGrid.append(contentsOf: Array(repeating: false, count: target3 - tripletGrid.count))
+        } else if tripletGrid.count > target3 {
+            tripletGrid = Array(tripletGrid.prefix(target3))
+        }
+    }
+
+    func toggleSubdivisionCell(_ index: Int) {
+        guard subdivisionGrid.indices.contains(index) else { return }
+        subdivisionGrid[index].toggle()
+    }
+
+    func toggleTripletCell(_ index: Int) {
+        guard tripletGrid.indices.contains(index) else { return }
+        tripletGrid[index].toggle()
+    }
+
+    /// One-tap presets for the subdivision grid. "Off-beats" lights up only
+    /// the "and" cell of each beat (position 2 of the 16th grid). "All 16ths"
+    /// fills every off-cell of the 16th row. "All triplets" fills both
+    /// non-downbeat triplet cells. "Clear" wipes everything.
+    func subdivisionApplyAllEighths() {
+        clearAllSubdivisionCells()
+        for beat in 0..<beatsPerCycle {
+            let i = beat * 4 + 2
+            if subdivisionGrid.indices.contains(i) { subdivisionGrid[i] = true }
+        }
+    }
+
+    func subdivisionApplyAllSixteenths() {
+        clearAllSubdivisionCells()
+        for i in subdivisionGrid.indices where (i % 4) != 0 {
+            subdivisionGrid[i] = true
+        }
+    }
+
+    func subdivisionApplyAllTriplets() {
+        clearAllSubdivisionCells()
+        for i in tripletGrid.indices where (i % 3) != 0 {
+            tripletGrid[i] = true
+        }
+    }
+
+    func subdivisionClearAll() {
+        clearAllSubdivisionCells()
+    }
+
+    private func clearAllSubdivisionCells() {
+        subdivisionGrid = Array(repeating: false, count: subdivisionGrid.count)
+        tripletGrid = Array(repeating: false, count: tripletGrid.count)
+    }
+
     // MARK: Presets
 
     func savePreset(named name: String) {
@@ -450,32 +552,41 @@ final class MetronomeModel: ObservableObject {
     // MARK: Engine sync
 
     private func push() {
-        let snapshot = EngineParams(
-            bpm: bpm,
-            beatsPerCycle: beatsPerCycle,
-            accents: accents,
-            layers: layers.map {
-                LayerSnapshot(
-                    enabled: $0.enabled,
-                    pulsesPerBeat: $0.pulsesPerBeat,
-                    volume: Float($0.volume),
-                    frequency: Float($0.frequency),
-                    waveform: $0.waveform
-                )
-            },
-            masterVolume: Float(masterVolume),
-            swing: Float(swing),
-            accentWaveform: accentSound,
-            beatWaveform: beatSound,
-            quietEnabled: quietEnabled,
-            quietPlayBars: quietPlayBars,
-            quietMuteBars: quietMuteBars,
-            metronomeOn: isRunning,
-            transportEpoch: transportEpoch,
-            toneEnabled: toneEnabled,
-            toneFrequency: Float(toneFrequency),
-            toneVolume: Float(toneVolume)
-        )
+        // Build the snapshot via piecewise assignment — a single 20+ argument
+        // initializer call sometimes pushes Swift's type checker past its
+        // expression-complexity budget on a debug build.
+        var snapshot = EngineParams()
+        snapshot.bpm = bpm
+        snapshot.beatsPerCycle = beatsPerCycle
+        snapshot.accents = accents
+        snapshot.layers = layers.map { layer in
+            LayerSnapshot(
+                enabled: layer.enabled,
+                pulsesPerBeat: layer.pulsesPerBeat,
+                volume: Float(layer.volume),
+                frequency: Float(layer.frequency),
+                waveform: layer.waveform
+            )
+        }
+        snapshot.masterVolume = Float(masterVolume)
+        snapshot.swing = Float(swing)
+        snapshot.accentWaveform = accentSound
+        snapshot.beatWaveform = beatSound
+        snapshot.quietEnabled = quietEnabled
+        snapshot.quietPlayBars = quietPlayBars
+        snapshot.quietMuteBars = quietMuteBars
+        snapshot.clickOnOffbeats = clickOnOffbeats
+        snapshot.subdivisionGrid = subdivisionGrid
+        snapshot.tripletGrid = tripletGrid
+        snapshot.subdivisionWaveform = subdivisionSound
+        snapshot.tripletWaveform = tripletSound
+        snapshot.subdivisionLevel = Float(subdivisionVolume)
+        snapshot.tripletLevel = Float(tripletVolume)
+        snapshot.metronomeOn = isRunning
+        snapshot.transportEpoch = transportEpoch
+        snapshot.toneEnabled = toneEnabled
+        snapshot.toneFrequency = Float(toneFrequency)
+        snapshot.toneVolume = Float(toneVolume)
         engine.update(snapshot)
     }
 }
