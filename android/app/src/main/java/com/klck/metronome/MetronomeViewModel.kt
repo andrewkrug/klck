@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.klck.metronome.audio.MetronomeEngine
 import com.klck.metronome.audio.PracticeDriver
 import com.klck.metronome.audio.TapTempo
+import com.klck.metronome.audio.Tuner
 import com.klck.metronome.model.BeatAccent
 import com.klck.metronome.model.ClickWaveform
 import com.klck.metronome.model.Preset
@@ -41,6 +42,7 @@ class MetronomeViewModel(app: Application) : AndroidViewModel(app) {
     )
     private val presetStore = PresetStore(app)
     private val settingsStore = SettingsStore(app)
+    val tuner = Tuner()
 
     // ----- Core -----
     private val _bpm = MutableStateFlow(engine.bpm)
