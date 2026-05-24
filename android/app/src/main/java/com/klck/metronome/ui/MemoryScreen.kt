@@ -21,7 +21,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
-import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,37 +37,33 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.klck.metronome.MetronomeViewModel
 import com.klck.metronome.model.Preset
 import com.klck.metronome.model.Setlist
+import com.klck.metronome.ui.theme.DB66
 
 @Composable
 fun MemoryScreen(vm: MetronomeViewModel) {
     var tab by remember { mutableIntStateOf(0) }
     Column(modifier = Modifier.fillMaxSize()) {
+        // Use Material 3's default indicator (which positions itself
+        // correctly) — overriding it with our own modifier was painting
+        // a full-width amber block.
         TabRow(
             selectedTabIndex = tab,
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.primary,
-            indicator = { positions ->
-                if (tab < positions.size) {
-                    TabRowDefaults.SecondaryIndicator(
-                        Modifier.tabIndicatorOffsetSafe(positions[tab]),
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            },
+            containerColor = DB66.Panel,
+            contentColor = DB66.LedBeat,
         ) {
             Tab(
                 selected = tab == 0,
                 onClick = { tab = 0 },
                 text = { Text("Presets", fontFamily = FontFamily.Monospace) },
-                selectedContentColor = MaterialTheme.colorScheme.primary,
-                unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                selectedContentColor = DB66.LedBeat,
+                unselectedContentColor = DB66.Engrave,
             )
             Tab(
                 selected = tab == 1,
                 onClick = { tab = 1 },
                 text = { Text("Setlists", fontFamily = FontFamily.Monospace) },
-                selectedContentColor = MaterialTheme.colorScheme.primary,
-                unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                selectedContentColor = DB66.LedBeat,
+                unselectedContentColor = DB66.Engrave,
             )
         }
         when (tab) {
@@ -77,12 +72,6 @@ fun MemoryScreen(vm: MetronomeViewModel) {
         }
     }
 }
-
-// Tiny shim — Material 3's TabRow indicator positioning helper isn't
-// stable across versions; offsetting the indicator by .padding is
-// equivalent here and avoids the deprecated tabIndicatorOffset name.
-private fun Modifier.tabIndicatorOffsetSafe(pos: androidx.compose.material3.TabPosition): Modifier =
-    this.padding(start = pos.left, top = 0.dp).width(pos.width).height(2.dp)
 
 @Composable
 private fun PresetsTab(vm: MetronomeViewModel) {
