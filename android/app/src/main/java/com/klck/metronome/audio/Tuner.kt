@@ -60,7 +60,27 @@ class Tuner {
     val inputLevel: StateFlow<Float> = _inputLevel.asStateFlow()
 
     private val sampleRate = 48_000
-    private val analysisFrames = 1024
+    // ----- Analysis window sizing (Nyquist + period-count rationale) -----
+    //
+    // Nyquist bounds the highest frequency we can represent: sampleRate/2 =
+    // 24 kHz, far above our 1.5 kHz musical ceiling. So aliasing isn't the
+    // concern — period count is. Autocorrelation needs ≥3 periods of the
+    // lowest frequency we care about to be reliable; with fewer, the ACF
+    // peak gets washed out by window-edge truncation and the detector starts
+    // octave-jumping. So pick the window size by the LOWEST frequency you
+    // want to track:
+    //
+    //   target low      period      window for 3 periods    update rate
+    //   ───────────     ────────    ─────────────────────   ───────────
+    //   82 Hz (low E)   ~585 smp    1755 → round to 2048    ~23 Hz
+    //   65 Hz (low C)   ~738 smp    2215 → round to 4096    ~11 Hz
+    //   50 Hz (cap)     ~960 smp    2880 → round to 4096    ~11 Hz
+    //
+    // 4096 covers everything down through bass low B (~62 Hz) with a real
+    // 3-period margin and still updates 11×/sec — plenty for a tuner needle.
+    // The previous 1024-sample window was only ~1.75 periods of low E, which
+    // is exactly where octave-jump bugs live; that's what made it "jumpy".
+    private val analysisFrames = 4096
     private var smoothed: Double = 0.0
     private var captureJob: Job? = null
     private var scope: CoroutineScope? = null
@@ -228,13 +248,53 @@ class Tuner {
         smoothed = 0.0
     }
 
+    /**
+     * Counts how many consecutive detections have arrived that look like a
+     * legitimate pitch change (not an octave error). Used to ratify a real
+     * jump after a few confirmations instead of trusting the first
+     * suspicious frame.
+     */
+    private var octaveJumpRunLength = 0
+
     private fun publish(freq: Double?) {
         if (freq == null || freq <= 0) {
             _hasSignal.value = false
             return
         }
         _hasSignal.value = true
-        smoothed = if (smoothed == 0.0) freq else smoothed * 0.4 + freq * 0.6
+
+        // Octave-jump rejection. The classic autocorrelation failure mode is
+        // reporting half or double the true fundamental (later/earlier ACF
+        // peak picked over the right one). Detect that by checking whether
+        // the new reading is close to smoothed/2 or smoothed*2 — if so,
+        // snap it to the smoothed octave instead of accepting the jump.
+        // Genuine octave changes still come through, but only after several
+        // consecutive readings agree (octaveJumpRunLength gate), so a single
+        // noisy frame can't flip the displayed note an octave.
+        var corrected = freq
+        if (smoothed > 0) {
+            val ratio = freq / smoothed
+            val nearHalf   = ratio in 0.45..0.55
+            val nearDouble = ratio in 1.85..2.15
+            if (nearHalf || nearDouble) {
+                octaveJumpRunLength++
+                if (octaveJumpRunLength < 3) {
+                    corrected = if (nearHalf) freq * 2.0 else freq / 2.0
+                } else {
+                    // Three frames in a row agreeing on the new octave —
+                    // legitimate. Accept it and reset the gate.
+                    octaveJumpRunLength = 0
+                }
+            } else {
+                octaveJumpRunLength = 0
+            }
+        }
+
+        // Heavier smoothing now that the underlying detection is more
+        // reliable (3 periods of low E per window). 0.25/0.75 means the
+        // displayed value lags one frame ~0.75x, giving the needle the
+        // calm feel of a hardware tuner without losing responsiveness.
+        smoothed = if (smoothed == 0.0) corrected else smoothed * 0.75 + corrected * 0.25
         _frequency.value = smoothed
 
         val midi = 69 + 12 * log2(smoothed / 440.0)
@@ -251,7 +311,10 @@ class Tuner {
      * pitch is detected (signal too quiet, no significant ACF peak).
      */
     private fun detectPitch(samples: FloatArray, n: Int, sampleRate: Double): Double? {
-        if (n < 1024) return null
+        // Need at least 2 periods of the lowest target frequency (50 Hz at
+        // 48 kHz ≈ 1920 samples). Anything smaller and ACF is dominated by
+        // the lag-0 envelope.
+        if (n < 1920) return null
 
         var mean = 0f
         for (i in 0 until n) mean += samples[i]
