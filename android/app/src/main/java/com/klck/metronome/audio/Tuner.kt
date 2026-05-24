@@ -53,6 +53,12 @@ class Tuner {
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError: StateFlow<String?> = _lastError.asStateFlow()
 
+    /** Rolling RMS of the input stream (0..1). Surfaces in the UI so a user
+     *  can tell whether the mic is producing audio at all, separate from
+     *  whether the pitch detector can lock onto a fundamental. */
+    private val _inputLevel = MutableStateFlow(0f)
+    val inputLevel: StateFlow<Float> = _inputLevel.asStateFlow()
+
     private val sampleRate = 48_000
     private val analysisFrames = 1024
     private var smoothed: Double = 0.0
@@ -60,7 +66,17 @@ class Tuner {
     private var scope: CoroutineScope? = null
 
     companion object {
+        private const val TAG = "KlckTuner"
         private val noteNames = arrayOf("C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B")
+        // Try sources from most-faithful (no AGC / noise suppression — best
+        // for pitch detection) down to most-compatible (works on emulators
+        // and devices that don't expose UNPROCESSED).
+        private val SOURCES = intArrayOf(
+            MediaRecorder.AudioSource.UNPROCESSED,
+            MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            MediaRecorder.AudioSource.MIC,
+            MediaRecorder.AudioSource.DEFAULT,
+        )
     }
 
     fun toggle() { if (_isListening.value) stop() else start() }
@@ -77,26 +93,41 @@ class Tuner {
         )
         val bufSize = maxOf(minBuf, analysisFrames * Float.SIZE_BYTES * 4)
 
-        val recorder = try {
-            AudioRecord.Builder()
-                .setAudioSource(MediaRecorder.AudioSource.UNPROCESSED)
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setSampleRate(sampleRate)
-                        .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
-                        .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                        .build()
-                )
-                .setBufferSizeInBytes(bufSize)
-                .build()
-        } catch (e: Throwable) {
-            _lastError.value = "AudioRecord init: ${e.message}"
-            return
+        // Walk the source list until one initializes successfully. Tracks
+        // which source actually opened so a downstream "no signal" can hint
+        // whether we fell back to a less-accurate source.
+        var recorder: AudioRecord? = null
+        var lastInitError: String? = null
+        var openedSource: Int = -1
+        for (src in SOURCES) {
+            val candidate = try {
+                AudioRecord.Builder()
+                    .setAudioSource(src)
+                    .setAudioFormat(
+                        AudioFormat.Builder()
+                            .setSampleRate(sampleRate)
+                            .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
+                            .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                            .build()
+                    )
+                    .setBufferSizeInBytes(bufSize)
+                    .build()
+            } catch (e: Throwable) {
+                lastInitError = "${sourceName(src)}: ${e.message}"
+                android.util.Log.w(TAG, "AudioRecord build failed (${sourceName(src)})", e)
+                null
+            }
+            if (candidate != null && candidate.state == AudioRecord.STATE_INITIALIZED) {
+                recorder = candidate; openedSource = src
+                android.util.Log.i(TAG, "AudioRecord initialized with source=${sourceName(src)}")
+                break
+            } else {
+                candidate?.release()
+                lastInitError = lastInitError ?: "${sourceName(src)}: state != INITIALIZED"
+            }
         }
-
-        if (recorder.state != AudioRecord.STATE_INITIALIZED) {
-            _lastError.value = "AudioRecord not initialized"
-            recorder.release()
+        if (recorder == null) {
+            _lastError.value = "Mic input unavailable. Tried ${SOURCES.size} sources. Last error: $lastInitError"
             return
         }
 
@@ -107,16 +138,63 @@ class Tuner {
             recorder.release()
             return
         }
+        if (recorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+            _lastError.value = "AudioRecord did not enter RECORDING state (source=${sourceName(openedSource)})"
+            recorder.release()
+            return
+        }
 
         _isListening.value = true
         val s = CoroutineScope(Dispatchers.Default)
         scope = s
         captureJob = s.launch {
             val buf = FloatArray(analysisFrames)
+            var consecutiveZeroReads = 0
+            var silentChunks = 0
+            var levelSmoothed = 0f
             try {
                 while (isActive && _isListening.value) {
                     val read = recorder.read(buf, 0, analysisFrames, AudioRecord.READ_BLOCKING)
-                    if (read <= 0) break
+                    if (read <= 0) {
+                        consecutiveZeroReads++
+                        if (consecutiveZeroReads >= 20) {
+                            android.util.Log.w(TAG, "AudioRecord.read returned $read for 20+ iterations (source=${sourceName(openedSource)}). Stopping.")
+                            _lastError.value = "No audio frames from mic. " +
+                                "If you're on an emulator, the mic input may not be wired up — " +
+                                "open Extended Controls (... button) → Microphone → enable 'Virtual microphone uses host audio input'."
+                            break
+                        }
+                        continue
+                    }
+                    consecutiveZeroReads = 0
+
+                    // Compute level for the UI meter even when pitch
+                    // detection bails out — a flat level bar tells the user
+                    // their mic isn't producing audio, separate from "audio
+                    // is there but pitch isn't locking".
+                    var sumSq = 0f
+                    for (i in 0 until read) sumSq += buf[i] * buf[i]
+                    val rms = kotlin.math.sqrt(sumSq / read)
+                    levelSmoothed = levelSmoothed * 0.7f + rms * 0.3f
+                    _inputLevel.value = levelSmoothed.coerceIn(0f, 1f)
+
+                    // Silence detection — after ~3 s of true silence on the
+                    // emulator, surface the host-mic-config hint.
+                    if (rms < 0.001f) {
+                        silentChunks++
+                        if (silentChunks == 140) {  // ~3 s at 1024 frames @ 48 kHz
+                            _lastError.value = "Receiving audio but it's silent. " +
+                                "On an Android emulator: open Extended Controls (... button) → " +
+                                "Microphone → enable 'Virtual microphone uses host audio input' " +
+                                "and grant the macOS mic permission to the emulator process."
+                        }
+                    } else {
+                        silentChunks = 0
+                        if (_lastError.value?.startsWith("Receiving audio") == true) {
+                            _lastError.value = null
+                        }
+                    }
+
                     val freq = detectPitch(buf, read, sampleRate.toDouble())
                     publish(freq)
                 }
@@ -125,6 +203,14 @@ class Tuner {
                 recorder.release()
             }
         }
+    }
+
+    private fun sourceName(src: Int): String = when (src) {
+        MediaRecorder.AudioSource.UNPROCESSED       -> "UNPROCESSED"
+        MediaRecorder.AudioSource.VOICE_RECOGNITION -> "VOICE_RECOGNITION"
+        MediaRecorder.AudioSource.MIC               -> "MIC"
+        MediaRecorder.AudioSource.DEFAULT           -> "DEFAULT"
+        else                                         -> "src#$src"
     }
 
     fun stop() {
@@ -138,6 +224,7 @@ class Tuner {
         _noteName.value = "—"
         _frequency.value = 0.0
         _cents.value = 0.0
+        _inputLevel.value = 0f
         smoothed = 0.0
     }
 

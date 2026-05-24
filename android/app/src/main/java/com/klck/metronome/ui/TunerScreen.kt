@@ -68,6 +68,7 @@ fun TunerScreen(vm: MetronomeViewModel) {
     val freq by vm.tuner.frequency.collectAsStateWithLifecycle()
     val cents by vm.tuner.cents.collectAsStateWithLifecycle()
     val lastError by vm.tuner.lastError.collectAsStateWithLifecycle()
+    val inputLevel by vm.tuner.inputLevel.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -130,6 +131,13 @@ fun TunerScreen(vm: MetronomeViewModel) {
             }
         }
 
+        // Input level meter — surfaces "mic is alive but silent" vs "mic
+        // is producing audio but pitch isn't locking" vs "mic isn't producing
+        // anything at all", which is otherwise indistinguishable.
+        if (listening) {
+            InputLevelMeter(level = inputLevel)
+        }
+
         when {
             lastError != null -> Text(
                 lastError ?: "",
@@ -179,6 +187,45 @@ fun TunerScreen(vm: MetronomeViewModel) {
 
     // Auto-stop when leaving the tab.
     LaunchedEffect(Unit) { /* no-op; stop happens when ViewModel is cleared. */ }
+}
+
+/** Horizontal level bar — shows the live RMS of the mic input scaled
+ *  with a soft compression curve so quiet voice / guitar shows as
+ *  ~mid-bar instead of barely-visible. Greys out when the level is
+ *  near-zero so it's obvious the mic is silent. */
+@Composable
+private fun InputLevelMeter(level: Float) {
+    val display = kotlin.math.sqrt(level.coerceIn(0f, 1f)).coerceIn(0f, 1f)
+    val active = level > 0.001f
+    // Capture theme-derived colors out here — they're @Composable getters
+    // and can't be read from inside Canvas's draw lambda.
+    val primary = MaterialTheme.colorScheme.primary
+    val secondary = MaterialTheme.colorScheme.secondary
+    val onSurfaceMuted = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+    val track = Color(0xFF1A1B1F)
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            if (active) "INPUT" else "INPUT · silent",
+            color = if (active) primary else onSurfaceMuted,
+            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+            fontSize = 10.sp,
+        )
+        androidx.compose.foundation.Canvas(
+            modifier = Modifier.fillMaxWidth().height(8.dp),
+        ) {
+            drawRect(track, size = size)
+            if (active) {
+                val w = size.width * display
+                drawRect(
+                    color = if (display > 0.8f) secondary else primary,
+                    size = androidx.compose.ui.geometry.Size(w, size.height),
+                )
+            }
+        }
+    }
 }
 
 /** Horizontal ±50-cent needle. Active = green, snapping to center when within ±5¢. */

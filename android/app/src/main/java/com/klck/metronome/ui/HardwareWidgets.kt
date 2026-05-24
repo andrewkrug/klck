@@ -37,14 +37,20 @@ import com.klck.metronome.ui.theme.DB66
  * Recessed control panel — DB-66 chassis cutout. Mirrors the iOS
  * `DevicePanel` ViewModifier: rounded corners, faint inner border, drop
  * shadow.
+ *
+ * The content slot is laid out as a [Column] with consistent inter-child
+ * spacing. (Earlier this was a [Box], which silently stacked multiple
+ * children on top of each other — every panel with two-or-more rows
+ * rendered as a tangle of overlapping labels.)
  */
 @Composable
 fun DevicePanel(
     modifier: Modifier = Modifier,
     inset: Dp = 14.dp,
-    content: @Composable () -> Unit,
+    spacing: Dp = 10.dp,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
-    Box(
+    androidx.compose.foundation.layout.Column(
         modifier = modifier
             .fillMaxWidth()
             .shadow(elevation = 4.dp, shape = RoundedCornerShape(14.dp))
@@ -52,7 +58,9 @@ fun DevicePanel(
             .background(DB66.Panel)
             .border(BorderStroke(1.dp, DB66.PanelEdge), RoundedCornerShape(14.dp))
             .padding(inset),
-    ) { content() }
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(spacing),
+        content = content,
+    )
 }
 
 /**
@@ -115,9 +123,13 @@ fun EngraveLabel(text: String, modifier: Modifier = Modifier) {
  * Helper combining EngraveLabel + DevicePanel, the most common pattern.
  */
 @Composable
-fun LabeledPanel(label: String, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+fun LabeledPanel(
+    label: String,
+    modifier: Modifier = Modifier,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         EngraveLabel(label)
-        DevicePanel { content() }
+        DevicePanel(content = content)
     }
 }
