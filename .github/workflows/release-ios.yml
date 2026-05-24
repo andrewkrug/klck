@@ -1,0 +1,94 @@
+name: Release · iOS IPA (unsigned)
+
+# Builds an unsigned .ipa from project.yml via xcodebuild without code
+# signing, packages the resulting .app into a Payload/ directory, and
+# publishes it as a rolling release. The IPA is not directly installable
+# on iOS — users must re-sign it with their own developer cert (Sideloadly,
+# AltStore, or Xcode's "Devices and Simulators" window).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Sources/**"
+      - "Resources/**"
+      - "Package.swift"
+      - "project.yml"
+      - ".github/workflows/release-ios.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build unsigned iOS app
+        run: |
+          xcodebuild \
+            -project Klck.xcodeproj \
+            -scheme Klck-iOS \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=NO \
+            build
+
+      - name: Package as unsigned IPA
+        run: |
+          APP_PATH=$(find build/DerivedData -path '*/Release-iphoneos/Klck.app' -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Klck.app not found in DerivedData"; exit 1
+          fi
+          echo "Found .app at: $APP_PATH"
+          mkdir -p artifacts payload-tmp/Payload
+          cp -r "$APP_PATH" payload-tmp/Payload/
+          (cd payload-tmp && zip -qr ../artifacts/Klck-ios-unsigned.ipa Payload)
+          ls -lh artifacts/
+
+      - name: Publish to ios-latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-latest
+          name: "iOS · latest unsigned IPA"
+          body: |
+            Unsigned `.ipa` of Klck for iOS 16+, built from `main` @ ${{ github.sha }}. **This file is not directly installable on iPhone or iPad** — iOS only runs apps signed by Apple (App Store), an Enterprise certificate, or a developer-signed build provisioned for your specific device.
+
+            To install on your own device you have to re-sign the IPA with your own credentials. Three common paths:
+
+            **Sideloadly** (free Apple ID, easiest)
+            1. Install [Sideloadly](https://sideloadly.io/) on Mac or Windows.
+            2. Plug your iPhone/iPad into the computer.
+            3. Drag `Klck-ios-unsigned.ipa` into Sideloadly, enter your Apple ID, and click **Start**. Sideloadly re-signs and pushes the build to your device.
+            4. On the device, go to **Settings → General → VPN & Device Management** and trust your Apple ID. Klck will launch.
+            5. Free Apple IDs re-sign expires every 7 days; reinstall to refresh.
+
+            **AltStore**
+            Install [AltStore](https://altstore.io/) (one-time setup), then open the IPA from AltStore Files → Install. AltStore can auto-refresh signatures over Wi-Fi.
+
+            **Xcode** (developer cert required)
+            1. Open Xcode → **Window → Devices and Simulators**.
+            2. Plug in your device, select it, and drag the IPA into the **Installed Apps** list. Xcode re-signs with your developer cert.
+
+            For the official, ready-to-install build, get Klck from the App Store once it ships there.
+
+            Source: [view the full diff on this commit](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}).
+          files: artifacts/Klck-ios-unsigned.ipa
+          make_latest: "false"
+          prerelease: false

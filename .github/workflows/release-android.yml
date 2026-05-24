@@ -1,0 +1,71 @@
+name: Release · Android APK
+
+# Builds an unsigned debug APK on every push to main that touches the
+# android/ tree, and publishes it to the `android-latest` rolling release
+# so contributors can grab a fresh build without compiling locally.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - ".github/workflows/release-android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # softprops/action-gh-release needs this to push assets
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties', 'android/**/*.gradle*', 'android/gradle/libs.versions.toml') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew :app:assembleDebug --no-daemon
+
+      - name: Rename APK
+        run: |
+          mkdir -p artifacts
+          cp android/app/build/outputs/apk/debug/app-debug.apk artifacts/Klck-android-debug.apk
+          ls -lh artifacts/
+
+      - name: Publish to android-latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-latest
+          name: "Android · latest build"
+          body: |
+            Unsigned debug APK built from `main` @ ${{ github.sha }}.
+
+            **Install on a phone or emulator:**
+            1. Download `Klck-android-debug.apk`.
+            2. On the device, go to **Settings → Security → Install unknown apps** and allow your file manager (or the browser you downloaded with) to install APKs.
+            3. Tap the downloaded APK and approve the install.
+            4. Klck will appear in your launcher.
+
+            The APK is signed with the standard Android debug key, so it installs without further work — but it is **not** a Play Store release. For audio quality and the latest stable build, install from the Play Store once it ships there.
+
+            Source: [view the full diff on this commit](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}).
+          files: artifacts/Klck-android-debug.apk
+          make_latest: "false"
+          prerelease: false
