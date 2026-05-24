@@ -1,9 +1,12 @@
 package com.klck.metronome.model
 
+import kotlinx.serialization.Serializable
 import java.util.UUID
 
 /** A user-facing subdivision layer. Mirrors Sources/Klck/Model/SubLayer.swift. */
+@Serializable
 data class SubLayer(
+    @Serializable(with = UuidSerializer::class)
     val id: UUID = UUID.randomUUID(),
     val name: String,
     val pulsesPerBeat: Int,

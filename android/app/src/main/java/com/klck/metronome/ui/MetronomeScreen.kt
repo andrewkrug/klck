@@ -19,18 +19,21 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -60,9 +63,20 @@ fun MetronomeScreen(vm: MetronomeViewModel) {
     val flashEnabled by vm.flashEnabled.collectAsStateWithLifecycle()
     val beatPulse by vm.beatPulse.collectAsStateWithLifecycle()
 
-    Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            Column(
+    var showSaveDialog by remember { mutableStateOf(false) }
+    if (showSaveDialog) {
+        SavePresetDialog(
+            currentBpm = bpm.toInt(),
+            currentBeats = beats,
+            onConfirm = { name ->
+                vm.savePreset(name); showSaveDialog = false
+            },
+            onDismiss = { showSaveDialog = false },
+        )
+    }
+
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
@@ -107,32 +121,81 @@ fun MetronomeScreen(vm: MetronomeViewModel) {
                 Spacer(Modifier.height(72.dp))  // breathing room under sticky button
             }
 
-            // Sticky START/STOP at the bottom.
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(20.dp),
+        // Sticky bottom bar: SAVE + START/STOP.
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Button(
+                onClick = { showSaveDialog = true },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                ),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier.height(54.dp),
+            ) { Text("SAVE", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+            Button(
+                onClick = { vm.toggleRun() },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (running) MaterialTheme.colorScheme.secondary
+                                      else MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier.weight(1f).height(54.dp),
             ) {
-                Button(
-                    onClick = { vm.toggleRun() },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (running) MaterialTheme.colorScheme.secondary
-                                          else MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
-                    shape = RoundedCornerShape(28.dp),
-                    modifier = Modifier.fillMaxWidth().height(58.dp),
-                ) {
-                    Text(if (running) "STOP" else "START",
-                        fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                }
+                Text(if (running) "STOP" else "START",
+                    fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
-
-            // Screen flash overlay.
-            if (flashEnabled && running) BeatFlash(beatPulse, activeBeat)
         }
+
+        // Screen flash overlay.
+        if (flashEnabled && running) BeatFlash(beatPulse, activeBeat)
     }
+}
+
+@Composable
+private fun SavePresetDialog(
+    currentBpm: Int,
+    currentBeats: Int,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf("Preset ${currentBpm}-${currentBeats}") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = { Text("Save preset", color = MaterialTheme.colorScheme.primary) },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                singleLine = true,
+                label = { Text("Name") },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    cursorColor = MaterialTheme.colorScheme.primary,
+                    focusedLabelColor = MaterialTheme.colorScheme.primary,
+                ),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(name.ifBlank { "Untitled" }) }) {
+                Text("SAVE", color = MaterialTheme.colorScheme.primary)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("CANCEL", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+    )
 }
 
 @Composable

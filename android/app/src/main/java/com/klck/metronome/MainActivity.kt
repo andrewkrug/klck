@@ -4,7 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import com.klck.metronome.ui.MetronomeScreen
+import com.klck.metronome.ui.KlckApp
 import com.klck.metronome.ui.theme.KlckTheme
 
 class MainActivity : ComponentActivity() {
@@ -15,7 +15,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             KlckTheme(useDark = true) {
-                MetronomeScreen(vm)
+                KlckApp(vm)
             }
         }
     }
