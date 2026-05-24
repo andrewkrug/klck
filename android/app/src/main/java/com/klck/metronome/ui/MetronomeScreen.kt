@@ -118,7 +118,9 @@ fun MetronomeScreen(vm: MetronomeViewModel) {
                 TempoTrainerSection(vm)
                 PracticeTimerSection(vm)
                 ToneSection(vm)
-                Spacer(Modifier.height(72.dp))  // breathing room under sticky button
+                // Breathing room under the sticky SAVE/START bar so the last
+                // slider isn't covered. ~120 dp (bar height + padding).
+                Spacer(Modifier.height(120.dp))
             }
 
         // Sticky bottom bar: SAVE + START/STOP.
