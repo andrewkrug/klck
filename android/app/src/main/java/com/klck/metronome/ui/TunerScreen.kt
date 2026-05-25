@@ -228,10 +228,17 @@ private fun InputLevelMeter(level: Float) {
     }
 }
 
-/** Horizontal ±50-cent needle. Active = green, snapping to center when within ±5¢. */
+/** Horizontal ±50-cent needle. Active = green, snapping to center when within ±5¢.
+ *  Needle position eases (tween 180 ms) so frame-to-frame cents jitter from
+ *  the pitch detector becomes a smooth glide instead of a twitch. */
 @Composable
 private fun CentsMeter(cents: Double, active: Boolean) {
-    val clamped = cents.coerceIn(-50.0, 50.0)
+    val target = cents.coerceIn(-50.0, 50.0).toFloat()
+    val animated by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (active) target else 0f,
+        animationSpec = androidx.compose.animation.core.tween(durationMillis = 180),
+        label = "cents-needle",
+    )
     val color = when {
         !active        -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
         abs(cents) < 5 -> MaterialTheme.colorScheme.primary
@@ -250,7 +257,7 @@ private fun CentsMeter(cents: Double, active: Boolean) {
                 size = androidx.compose.ui.geometry.Size(2f, tickH))
         }
         // Needle.
-        val needleX = (w / 2 + (clamped.toFloat() / 50f) * (w / 2))
+        val needleX = (w / 2 + (animated / 50f) * (w / 2))
         drawRect(color, topLeft = Offset(needleX - 3f, 0f),
             size = androidx.compose.ui.geometry.Size(6f, h))
     }

@@ -101,7 +101,12 @@ class MetronomeViewModel(app: Application) : AndroidViewModel(app) {
     val quietMuteBars: StateFlow<Int> = _quietMuteBars.asStateFlow()
 
     val trainerEnabled = driver.trainerEnabled
+    val trainerStartBPM = driver.trainerStartBPM
+    val trainerTargetBPM = driver.trainerTargetBPM
+    val trainerStepBPM = driver.trainerStepBPM
+    val trainerEveryBars = driver.trainerEveryBars
     val timerEnabled = driver.timerEnabled
+    val timerMinutes = driver.timerMinutes
     val timerRemainingSec = driver.timerRemainingSec
 
     // ----- Visual -----
@@ -246,14 +251,14 @@ class MetronomeViewModel(app: Application) : AndroidViewModel(app) {
 
     // Tempo trainer.
     fun setTrainerEnabled(on: Boolean) = driver.setTrainerEnabled(on)
-    fun setTrainerStart(v: Double)  { driver.trainerStartBPM = v.coerceIn(30.0, 300.0) }
-    fun setTrainerTarget(v: Double) { driver.trainerTargetBPM = v.coerceIn(30.0, 300.0) }
-    fun setTrainerStep(v: Double)   { driver.trainerStepBPM = v.coerceIn(1.0, 30.0) }
-    fun setTrainerEveryBars(n: Int) { driver.trainerEveryBars = n.coerceIn(1, 32) }
+    fun setTrainerStart(v: Double)     = driver.setTrainerStartBPM(v)
+    fun setTrainerTarget(v: Double)    = driver.setTrainerTargetBPM(v)
+    fun setTrainerStep(v: Double)      = driver.setTrainerStepBPM(v)
+    fun setTrainerEveryBars(n: Int)    = driver.setTrainerEveryBars(n)
 
     // Practice timer.
     fun setTimerEnabled(on: Boolean) = driver.setTimerEnabled(on)
-    fun setTimerMinutes(n: Int)      { driver.timerMinutes = n.coerceIn(1, 240) }
+    fun setTimerMinutes(n: Int)      = driver.setTimerMinutes(n)
 
     fun setFlashEnabled(on: Boolean) { _flashEnabled.value = on; persistSettingsDebounced() }
 
@@ -313,10 +318,31 @@ class MetronomeViewModel(app: Application) : AndroidViewModel(app) {
         persistSetlists(updated)
     }
 
+    fun createSetlist(name: String): Setlist {
+        val sl = Setlist(name = name.ifBlank { "Setlist ${_setlists.value.size + 1}" })
+        saveSetlist(sl)
+        return sl
+    }
+
     fun deleteSetlist(id: java.util.UUID) {
         val updated = _setlists.value.filterNot { it.id == id }
         _setlists.value = updated
         persistSetlists(updated)
+    }
+
+    /** Append a preset (referenced by id) to a setlist. */
+    fun addPresetToSetlist(setlistId: java.util.UUID, presetId: java.util.UUID, advanceAfterBars: Int = 0) {
+        val cur = _setlists.value.firstOrNull { it.id == setlistId } ?: return
+        val item = com.klck.metronome.model.SetlistItem(
+            presetID = presetId, advanceAfterBars = advanceAfterBars
+        )
+        saveSetlist(cur.copy(items = cur.items + item))
+    }
+
+    /** Remove an item from a setlist by item id. */
+    fun removeSetlistItem(setlistId: java.util.UUID, itemId: java.util.UUID) {
+        val cur = _setlists.value.firstOrNull { it.id == setlistId } ?: return
+        saveSetlist(cur.copy(items = cur.items.filterNot { it.id == itemId }))
     }
 
     private fun applyPresetToState(p: Preset) {

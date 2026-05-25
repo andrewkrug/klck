@@ -27,32 +27,43 @@ class PracticeDriver(
     private val onSetBpm: (Double) -> Unit,
     private val onStop: () -> Unit,
 ) {
-    // Trainer state.
+    // Trainer state — expose as StateFlows so the UI can bind sliders.
     private val _trainerEnabled = MutableStateFlow(false)
     val trainerEnabled: StateFlow<Boolean> = _trainerEnabled.asStateFlow()
-    var trainerStartBPM = 80.0
-    var trainerTargetBPM = 160.0
-    var trainerStepBPM = 4.0
-    var trainerEveryBars = 4
+    private val _trainerStartBPM  = MutableStateFlow(80.0)
+    val trainerStartBPM: StateFlow<Double> = _trainerStartBPM.asStateFlow()
+    private val _trainerTargetBPM = MutableStateFlow(160.0)
+    val trainerTargetBPM: StateFlow<Double> = _trainerTargetBPM.asStateFlow()
+    private val _trainerStepBPM   = MutableStateFlow(4.0)
+    val trainerStepBPM: StateFlow<Double> = _trainerStepBPM.asStateFlow()
+    private val _trainerEveryBars = MutableStateFlow(4)
+    val trainerEveryBars: StateFlow<Int> = _trainerEveryBars.asStateFlow()
+
+    fun setTrainerStartBPM(v: Double)  { _trainerStartBPM.value  = v.coerceIn(30.0, 300.0) }
+    fun setTrainerTargetBPM(v: Double) { _trainerTargetBPM.value = v.coerceIn(30.0, 300.0) }
+    fun setTrainerStepBPM(v: Double)   { _trainerStepBPM.value   = v.coerceIn(1.0, 30.0) }
+    fun setTrainerEveryBars(n: Int)    { _trainerEveryBars.value = n.coerceIn(1, 32) }
 
     // Timer state.
     private val _timerEnabled = MutableStateFlow(false)
     val timerEnabled: StateFlow<Boolean> = _timerEnabled.asStateFlow()
     private val _timerRemainingSec = MutableStateFlow(0L)
     val timerRemainingSec: StateFlow<Long> = _timerRemainingSec.asStateFlow()
-    var timerMinutes = 10
+    private val _timerMinutes = MutableStateFlow(10)
+    val timerMinutes: StateFlow<Int> = _timerMinutes.asStateFlow()
+    fun setTimerMinutes(n: Int) { _timerMinutes.value = n.coerceIn(1, 240) }
 
     private var loopJob: Job? = null
 
     fun setTrainerEnabled(on: Boolean) {
         _trainerEnabled.value = on
-        if (on) onSetBpm(trainerStartBPM)
+        if (on) onSetBpm(_trainerStartBPM.value)
         ensureLoopRunning()
     }
 
     fun setTimerEnabled(on: Boolean) {
         _timerEnabled.value = on
-        _timerRemainingSec.value = if (on) (timerMinutes * 60L) else 0L
+        _timerRemainingSec.value = if (on) (_timerMinutes.value * 60L) else 0L
         ensureLoopRunning()
     }
 
@@ -74,11 +85,12 @@ class PracticeDriver(
                 if (_trainerEnabled.value) {
                     val m = engine.currentMeasure
                     if (lastTrainerMeasure < 0) lastTrainerMeasure = m
-                    if (m > lastTrainerMeasure && m % trainerEveryBars == 0) {
-                        val next = (engine.bpm + trainerStepBPM)
-                            .coerceAtMost(trainerTargetBPM)
+                    val every = _trainerEveryBars.value
+                    val target = _trainerTargetBPM.value
+                    if (m > lastTrainerMeasure && m % every == 0) {
+                        val next = (engine.bpm + _trainerStepBPM.value).coerceAtMost(target)
                         onSetBpm(next)
-                        if (next >= trainerTargetBPM) {
+                        if (next >= target) {
                             _trainerEnabled.value = false
                         }
                         lastTrainerMeasure = m

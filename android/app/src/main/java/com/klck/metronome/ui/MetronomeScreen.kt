@@ -1,5 +1,6 @@
 package com.klck.metronome.ui
 
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -81,15 +82,24 @@ fun MetronomeScreen(vm: MetronomeViewModel) {
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp, vertical = 16.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             BeatLightsView(accents, activeBeat, running)
-            LcdReadout(bpm.toInt(), beats, running)
-            TempoControls(bpm, onChange = vm::setBpm, onTap = vm::tap)
-            BeatsRow(beats, onChange = vm::setBeatsPerCycle)
-            AccentGrid(accents, vm::cycleAccent)
+            LcdReadout(vm, bpm.toInt(), beats, running)
+            // Combined TRANSPORT panel: tempo slider+steppers+TAP +
+            // beats stepper + accent grid in one recessed cutout. Saves
+            // ~120dp of vertical space vs three separate panels.
+            TransportPanel(
+                bpm = bpm,
+                onBpmChange = vm::setBpm,
+                onTap = vm::tap,
+                beats = beats,
+                onBeatsChange = vm::setBeatsPerCycle,
+                accents = accents,
+                onCycleAccent = vm::cycleAccent,
+            )
             SubdivisionGrid(
                 title = "Sixteenths (e · and · a)",
                 cellsPerBeat = 4,
@@ -168,10 +178,20 @@ private fun BeatLightsView(accents: List<BeatAccent>, activeBeat: Int, running: 
                 isAccent       -> DB66.LedAccent
                 else           -> DB66.LedBeat
             }
+            // Glow eases in fast (60 ms) and decays slow (160 ms) — same
+            // perceptual envelope as a real LED with capacitive recovery.
+            val targetElev = if (on) 10.dp else 0.dp
+            val animatedElev by animateDpAsState(
+                targetValue = targetElev,
+                animationSpec = androidx.compose.animation.core.tween(
+                    durationMillis = if (on) 60 else 160,
+                ),
+                label = "beat-glow",
+            )
             Box(
                 modifier = Modifier
                     .padding(horizontal = 5.dp)
-                    .shadow(elevation = if (on) 10.dp else 0.dp,
+                    .shadow(elevation = animatedElev,
                             shape = CircleShape,
                             spotColor = color, ambientColor = color)
                     .size(size)
@@ -186,7 +206,26 @@ private fun BeatLightsView(accents: List<BeatAccent>, activeBeat: Int, running: 
 // -------- LCD readout --------
 
 @Composable
-private fun LcdReadout(bpm: Int, beats: Int, running: Boolean) {
+private fun LcdReadout(vm: MetronomeViewModel, bpm: Int, beats: Int, running: Boolean) {
+    val subdivisionGrid by vm.subdivisionGrid.collectAsStateWithLifecycle()
+    val tripletGrid by vm.tripletGrid.collectAsStateWithLifecycle()
+    val swing by vm.swing.collectAsStateWithLifecycle()
+    val timerEnabled by vm.timerEnabled.collectAsStateWithLifecycle()
+    val timerRemaining by vm.timerRemainingSec.collectAsStateWithLifecycle()
+    val timerMinutes by vm.timerMinutes.collectAsStateWithLifecycle()
+
+    val sub16On = subdivisionGrid.any { it }
+    val trip3On = tripletGrid.any { it }
+    val subdivLabel = when {
+        sub16On && trip3On -> "BOTH"
+        sub16On            -> "16TH"
+        trip3On            -> "TRIP"
+        else               -> "OFF"
+    }
+    val timerLabel = if (timerEnabled) {
+        val t = if (running) timerRemaining.toInt() else timerMinutes * 60
+        "%d:%02d".format(t / 60, t % 60)
+    } else "--:--"
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -211,11 +250,11 @@ private fun LcdReadout(bpm: Int, beats: Int, running: Boolean) {
             Row(modifier = Modifier.fillMaxWidth()) {
                 LcdField("BEAT", "$beats/4")
                 LcdDivider()
-                LcdField("SUBDIV", "OFF")
+                LcdField("SUBDIV", subdivLabel)
                 LcdDivider()
-                LcdField("SWING", "0%")
+                LcdField("SWING", "${(swing * 100).toInt()}%")
                 LcdDivider()
-                LcdField("TIMER", "--:--")
+                LcdField("TIMER", timerLabel)
             }
         }
     }
@@ -242,69 +281,81 @@ private fun LcdDivider() {
     Box(modifier = Modifier.width(1.dp).height(22.dp).background(DB66.LcdInk.copy(alpha = 0.25f)))
 }
 
-// -------- Tempo / Beats / Accents --------
+// -------- Transport (tempo + beats + accents in one panel) --------
 
 @Composable
-private fun TempoControls(bpm: Double, onChange: (Double) -> Unit, onTap: () -> Unit) {
-    LabeledPanel("Tempo") {
-        Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Slider(
-                value = bpm.toFloat(),
-                onValueChange = { onChange(it.toDouble()) },
-                valueRange = 30f..300f,
-                colors = SliderDefaults.colors(
-                    thumbColor = DB66.LedBeat,
-                    activeTrackColor = DB66.LedBeat,
-                    inactiveTrackColor = DB66.Panel,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DeviceButton("-1", { onChange(bpm - 1) }, fontSize = 12)
-                DeviceButton("+1", { onChange(bpm + 1) }, fontSize = 12)
-                DeviceButton("-5", { onChange(bpm - 5) }, fontSize = 12)
-                DeviceButton("+5", { onChange(bpm + 5) }, fontSize = 12)
-                DeviceButton("TAP", onTap, fontSize = 12,
-                    contentColor = DB66.LedBeat)
-            }
+private fun TransportPanel(
+    bpm: Double,
+    onBpmChange: (Double) -> Unit,
+    onTap: () -> Unit,
+    beats: Int,
+    onBeatsChange: (Int) -> Unit,
+    accents: List<BeatAccent>,
+    onCycleAccent: (Int) -> Unit,
+) {
+    LabeledPanel("Transport") {
+        Slider(
+            value = bpm.toFloat(),
+            onValueChange = { onBpmChange(it.toDouble()) },
+            valueRange = 30f..300f,
+            colors = SliderDefaults.colors(
+                thumbColor = DB66.LedBeat,
+                activeTrackColor = DB66.LedBeat,
+                inactiveTrackColor = DB66.Panel,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+            DeviceButton("-1", { onBpmChange(bpm - 1) }, fontSize = 12, modifier = Modifier.weight(1f))
+            DeviceButton("+1", { onBpmChange(bpm + 1) }, fontSize = 12, modifier = Modifier.weight(1f))
+            DeviceButton("-5", { onBpmChange(bpm - 5) }, fontSize = 12, modifier = Modifier.weight(1f))
+            DeviceButton("+5", { onBpmChange(bpm + 5) }, fontSize = 12, modifier = Modifier.weight(1f))
+            DeviceButton("TAP", onTap, fontSize = 12, contentColor = DB66.LedBeat,
+                modifier = Modifier.weight(1.3f))
         }
-    }
-}
-
-@Composable
-private fun BeatsRow(beats: Int, onChange: (Int) -> Unit) {
-    LabeledPanel("Meter") {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Beats", color = DB66.Engrave, fontSize = 13.sp,
-                modifier = Modifier.weight(1f))
-            DeviceButton("-", { onChange(beats - 1) }, fontSize = 14)
+        // Thin engraved divider between transport sub-groups, like a
+        // silk-screened line on the chassis.
+        Box(modifier = Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(DB66.PanelEdge))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Beats", color = DB66.Engrave, fontSize = 12.sp)
+            DeviceButton("-", { onBeatsChange(beats - 1) }, fontSize = 14)
             Text(beats.toString(), color = DB66.LedBeat,
-                fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-            DeviceButton("+", { onChange(beats + 1) }, fontSize = 14)
-        }
-    }
-}
-
-@Composable
-private fun AccentGrid(accents: List<BeatAccent>, onTap: (Int) -> Unit) {
-    LabeledPanel("Accents") {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            accents.forEachIndexed { i, a ->
-                val color = when (a) {
-                    BeatAccent.ACCENT -> DB66.LedAccent
-                    BeatAccent.NORMAL -> DB66.LedBeat.copy(alpha = 0.6f)
-                    BeatAccent.MUTED  -> DB66.LedOff
+                fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 18.sp,
+                modifier = Modifier.width(22.dp))
+            DeviceButton("+", { onBeatsChange(beats + 1) }, fontSize = 14)
+            // Accent LEDs sit on the same row to the right of the stepper —
+            // the iOS layout doesn't have room for this, but on Android the
+            // extra horizontal space lets us collapse three iOS rows into one.
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                accents.forEachIndexed { i, a ->
+                    val isAccent = a == BeatAccent.ACCENT
+                    val color = when (a) {
+                        BeatAccent.ACCENT -> DB66.LedAccent
+                        BeatAccent.NORMAL -> DB66.LedBeat.copy(alpha = 0.6f)
+                        BeatAccent.MUTED  -> DB66.LedOff
+                    }
+                    val size = if (isAccent) 22.dp else 18.dp
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 3.dp)
+                            .size(size)
+                            .clip(CircleShape)
+                            .background(color)
+                            .border(1.dp, Color.Black.copy(alpha = 0.5f), CircleShape)
+                            .clickable { onCycleAccent(i) },
+                    )
                 }
-                Box(
-                    modifier = Modifier
-                        .padding(horizontal = 5.dp)
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(color)
-                        .border(1.dp, Color.Black.copy(alpha = 0.5f), CircleShape)
-                        .clickable { onTap(i) },
-                )
             }
         }
     }
@@ -421,21 +472,34 @@ private fun QuietCountSection(vm: MetronomeViewModel) {
 @Composable
 private fun TempoTrainerSection(vm: MetronomeViewModel) {
     val on by vm.trainerEnabled.collectAsStateWithLifecycle()
+    val start by vm.trainerStartBPM.collectAsStateWithLifecycle()
+    val target by vm.trainerTargetBPM.collectAsStateWithLifecycle()
+    val step by vm.trainerStepBPM.collectAsStateWithLifecycle()
+    val every by vm.trainerEveryBars.collectAsStateWithLifecycle()
     LabeledPanel("Tempo Trainer") {
         ToggleRow("Enabled", on, vm::setTrainerEnabled)
-        Text("Ramps BPM by +N every M measures until target.",
+        Text("Ramps BPM by +step every N measures until target.",
             color = DB66.Engrave.copy(alpha = 0.7f), fontSize = 11.sp)
+        LabeledSlider("Start", start, 30.0..300.0, vm::setTrainerStart,
+            valueLabel = "${start.toInt()} BPM")
+        LabeledSlider("Target", target, 30.0..300.0, vm::setTrainerTarget,
+            valueLabel = "${target.toInt()} BPM")
+        LabeledSlider("Step", step, 1.0..30.0, vm::setTrainerStep,
+            valueLabel = "+${step.toInt()} BPM")
+        StepperRow("Every N bars", every, vm::setTrainerEveryBars)
     }
 }
 
 @Composable
 private fun PracticeTimerSection(vm: MetronomeViewModel) {
     val on by vm.timerEnabled.collectAsStateWithLifecycle()
+    val minutes by vm.timerMinutes.collectAsStateWithLifecycle()
     val remaining by vm.timerRemainingSec.collectAsStateWithLifecycle()
     val mins = remaining / 60
     val secs = remaining % 60
     LabeledPanel("Practice Timer") {
         ToggleRow("Enabled", on, vm::setTimerEnabled)
+        StepperRow("Minutes", minutes, vm::setTimerMinutes)
         if (on) {
             Text("Stops in %d:%02d".format(mins, secs),
                 color = DB66.LedBeat, fontFamily = FontFamily.Monospace, fontSize = 16.sp)
