@@ -1,0 +1,61 @@
+name: Release · macOS app
+
+# Builds the macOS .app via the same SwiftPM + build_app.sh path used
+# locally, ad-hoc signed (no Apple Developer cert involved), and publishes
+# it as a rolling release.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Sources/**"
+      - "Resources/**"
+      - "Package.swift"
+      - "build_app.sh"
+      - ".github/workflows/release-macos.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build Klck.app
+        run: ./build_app.sh release
+
+      - name: Zip Klck.app
+        run: |
+          mkdir -p artifacts
+          ditto -ck --sequesterRsrc --keepParent Klck.app artifacts/Klck-macos.zip
+          ls -lh artifacts/
+
+      - name: Publish to macos-latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: macos-latest
+          name: "macOS · latest build"
+          body: |
+            Ad-hoc-signed Klck.app for macOS 13+, built from `main` @ ${{ github.sha }}.
+
+            **Install:**
+            1. Download `Klck-macos.zip` and double-click to unzip.
+            2. Drag **Klck.app** into your **Applications** folder.
+            3. The first time you open it, macOS Gatekeeper will refuse to launch it because the app is ad-hoc signed (no Developer ID). Two options:
+               - **Easy**: right-click **Klck.app → Open**, then click **Open** in the warning dialog. macOS remembers your choice for future launches.
+               - **Or via Terminal**: `xattr -dr com.apple.quarantine /Applications/Klck.app` removes the quarantine flag so the app opens normally.
+            4. If you want the official, fully-signed version, install from the Mac App Store once it ships there.
+
+            Source: [view the full diff on this commit](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}).
+          files: artifacts/Klck-macos.zip
+          make_latest: "false"
+          prerelease: false

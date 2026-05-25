@@ -63,7 +63,35 @@ Check your toolchain:
 make version      # or: swift --version
 ```
 
-## Build & run
+## Pre-built downloads (unsigned)
+
+For people who just want to try it without compiling, every push to `main`
+publishes fresh per-platform builds via GitHub Actions:
+
+- **Android APK** — <https://github.com/andrewkrug/klck/releases/tag/android-latest>
+- **macOS app** — <https://github.com/andrewkrug/klck/releases/tag/macos-latest>
+- **iOS IPA (unsigned)** — <https://github.com/andrewkrug/klck/releases/tag/ios-latest>
+
+These are convenience artifacts, not App Store releases. Each release page
+has a short install guide; the highlights:
+
+- **Android** — Download the APK to your phone, enable installs from your
+  browser/file manager (Settings → Security → Install unknown apps), tap
+  the file. The APK is signed with the standard Android debug key so the
+  installer accepts it without further steps.
+- **macOS** — Download, unzip, drag `Klck.app` into Applications. The first
+  launch needs **right-click → Open** (or
+  `xattr -dr com.apple.quarantine /Applications/Klck.app`) because the
+  bundle is ad-hoc signed instead of Developer-ID signed.
+- **iOS** — The published `.ipa` is unsigned and can't install directly.
+  Re-sign it with [Sideloadly](https://sideloadly.io/) or
+  [AltStore](https://altstore.io/) using your own free Apple ID. The
+  release page has step-by-step instructions.
+
+For the official, fully-signed builds, install from the App Store / Mac App
+Store / Play Store once they ship.
+
+## Build & run (macOS)
 
 ```sh
 make            # build + assemble Klck.app  (default target)
@@ -121,20 +149,57 @@ Under the hood, `make app` runs `./build_app.sh`, which does
 ~/Library/Application Support/Klck/presets.json
 ```
 
+## Build & run (Android)
+
+The Android port lives in [`android/`](android/) as a self-contained Gradle
+project. Requires Android Studio (for the bundled JDK 21 + Android SDK at
+`~/Library/Android/sdk`); no global Gradle install needed — the wrapper is
+checked in.
+
+From the repo root:
+
+```sh
+make android-debug     # build debug APK → android/app/build/outputs/apk/debug/
+make android-install   # build + install on the connected device or emulator
+make android-launch    # force-stop and re-launch on the connected device
+make android-logcat    # tail logcat filtered to Klck
+make android-emulator  # boot the first available AVD
+make android-clean     # gradle :app:clean
+make android-release   # build the (unsigned) release APK
+```
+
+The Makefile uses Android Studio's bundled JDK by default; override it with
+`ANDROID_JAVA=/path/to/another/jdk make android-debug` if you have your own.
+
+A typical first-run on a fresh checkout:
+
+```sh
+make android-emulator   # boots an AVD in the background
+make android-install    # builds + sideloads the debug APK
+make android-launch     # opens Klck on the emulator
+```
+
+The Android port mirrors the Swift codebase's audio engine, model, and UI
+patterns — see [`android/README.md`](android/README.md) for the architecture
+notes (Kotlin model port, AudioTrack render loop mirroring
+`AVAudioSourceNode`, Compose UI styled to match the DB-66 chassis aesthetic).
+
 ## Project layout
 
 ```
 Package.swift                 SwiftPM manifest (macOS 13+ / iOS 16+)
-Makefile                      build/run/clean + ios-project targets
+Makefile                      build/run/clean for mac + ios + android
 build_app.sh                  swift build + macOS .app assembly
-project.yml                   XcodeGen spec for the iOS app
+project.yml                   XcodeGen spec for the iOS + macOS Xcode targets
 Resources/Info.plist          macOS bundle metadata
-Resources/Klck-iOS-Info.plist iOS bundle metadata
-Sources/Klck/                 shared sources (macOS + iOS)
+Sources/Klck/                 shared Swift sources (macOS + iOS)
   KlckApp.swift               @main App entry (cross-platform Scene)
   Audio/AudioEngine.swift     sample-accurate render engine
-  Model/                      MetronomeModel, SubLayer, Preset
+  Audio/Tuner.swift           chromatic tuner (autocorrelation)
+  Model/                      MetronomeModel, SubLayer, Preset, Setlist
   Views/                      SwiftUI interface
+android/                      native Kotlin/Compose port (see android/README.md)
+.github/workflows/            Pages deploy + per-platform unsigned releases
 ```
 
 The iOS and macOS apps build from the **same** `Sources/Klck` files; the few
